@@ -89,7 +89,7 @@ const num = (value) => {
   return Number.isFinite(n) ? n : null;
 };
 
-const liters = (value) => (value == null ? '–' : `${Number(value).toFixed(1)} l`);
+const liters = (value) => (value == null ? '–' : `${Number(value).toLocaleString('de-DE', { maximumFractionDigits: 1 })} l`);
 
 /** Foto-URL mit Version, damit nach dem Drehen nicht das alte Bild kommt. */
 const photoSrc = (path, item) => (path
@@ -1281,44 +1281,34 @@ async function loadBins() {
   try {
     const [{ bins }, { stats }] = await Promise.all([api('/api/bins'), api('/api/stats')]);
     state.bins = bins;
-    $('#bins-summary').textContent =
-      `${bins.length} Kisten · ${Math.round(stats.fill_percent)} % belegt · ${liters(stats.free_liters)} frei von ${liters(stats.capacity_liters)} · ${stats.items_stored} Gegenstände`
-      + (bins.filter((b) => b.marked_full).length
-        ? ` · ${bins.filter((b) => b.marked_full).length} Kiste(n) voll`
-        : '')
-      + (stats.purchase_value_eur > 0
-        ? ` · Warenwert ${stats.purchase_value_eur.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}`
-        : '');
+    const fullCount = bins.filter((b) => b.marked_full).length;
+    $('#bins-summary').textContent = [
+      `${bins.length} Kisten`,
+      `${Math.round(stats.fill_percent)} % belegt`,
+      `${stats.items_stored} Gegenstände`,
+      fullCount ? `${fullCount} voll` : null,
+    ].filter(Boolean).join(' · ');
+    // Liter & Co. nur bei Bedarf (Hover/Tooltip), nicht im Standardtext.
+    $('#bins-summary').title = [
+      `${liters(stats.free_liters)} frei von ${liters(stats.capacity_liters)}`,
+      `${liters(stats.used_liters)} belegt`,
+      stats.purchase_value_eur > 0
+        ? `Warenwert ${stats.purchase_value_eur.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}`
+        : null,
+    ].filter(Boolean).join(' · ');
     if (!bins.length) {
       list.innerHTML = '<p class="muted">Noch keine Kiste angelegt.</p>';
       return;
     }
     list.innerHTML = bins.map(binCard).join('');
-    $$('#bins-list [data-bin-items]').forEach((btn) => {
-      btn.addEventListener('click', () => toggleBinItems(Number(btn.dataset.binItems)));
-    });
-    $$('#bins-list [data-edit-bin]').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const bin = state.bins.find((b) => b.id === Number(btn.dataset.editBin));
-        openBinDialog(bin);
-      });
-    });
-    $$('#bins-list [data-mark-bin]').forEach((btn) => {
-      btn.addEventListener('click', async () => {
-        try {
-          await api(`/api/bins/${btn.dataset.markBin}/full`, { method: 'POST' });
-          toast('Kiste als voll markiert – nur noch für Kleinteile', 'ok');
-          loadBins();
-        } catch (err) { toast(err.message, 'error'); }
-      });
-    });
-    $$('#bins-list [data-unmark-bin]').forEach((btn) => {
-      btn.addEventListener('click', async () => {
-        try {
-          await api(`/api/bins/${btn.dataset.unmarkBin}/full`, { method: 'DELETE' });
-          toast('Kiste wieder freigegeben', 'ok');
-          loadBins();
-        } catch (err) { toast(err.message, 'error'); }
+    $$('#bins-list [data-open-bin]').forEach((card) => {
+      const open = () => {
+        const bin = state.bins.find((b) => b.id === Number(card.dataset.openBin));
+        if (bin) openBinDetail(bin);
+      };
+      card.addEventListener('click', open);
+      card.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); open(); }
       });
     });
   } catch (err) {
@@ -1357,32 +1347,93 @@ function fillMeter(percent, { label = '', forcedFull = false } = {}) {
 function binCard(bin) {
   const fill = Math.max(0, Math.min(100, bin.fill_percent ?? 0));
   const markedFull = Boolean(bin.marked_full);
+  const tip = [
+    `${liters(bin.free_liters)} frei von ${liters(bin.capacity_liters)}`,
+    `${Math.round(fill)} % belegt`,
+    `${bin.item_count} Gegenstände`,
+    bin.weight_g ? `${(bin.weight_g / 1000).toFixed(1)} kg` : null,
+    markedFull ? 'als voll markiert' : null,
+  ].filter(Boolean).join(' · ');
   return `
-    <div class="item-card">
-      <div class="title-row">
-        <div class="bin-head">
-          ${bin.photo_url ? `<img class="bin-thumb" src="${esc(bin.photo_url)}?v=${encodeURIComponent(bin.updated_at ?? '')}" alt="Foto der Kiste" loading="lazy">` : ''}
-          <div>
-            <div class="name">${esc(bin.code)}${bin.name ? ` · ${esc(bin.name)}` : ''}</div>
-            <div class="meta">${esc(bin.location || 'ohne Ort')}${bin.shelf ? ` · ${esc(bin.shelf)}` : ''}${bin.active ? '' : ' · inaktiv'}</div>
-          </div>
+    <div class="bin-card" data-open-bin="${bin.id}" data-tip="${esc(tip)}" title="${esc(tip)}" role="button" tabindex="0">
+      <div class="bin-card-main">
+        ${bin.photo_url
+          ? `<img class="bin-thumb" src="${esc(bin.photo_url)}?v=${encodeURIComponent(bin.updated_at ?? '')}" alt="" loading="lazy">`
+          : `<span class="bin-thumb bin-thumb-empty">📦</span>`}
+        <div class="bin-card-text">
+          <div class="bin-card-title"><strong>${esc(bin.code)}</strong>${bin.name ? ` <span class="bin-card-name">${esc(bin.name)}</span>` : ''}</div>
+          <div class="bin-card-sub">${esc(bin.location || 'ohne Ort')}${bin.shelf ? ` · ${esc(bin.shelf)}` : ''}${bin.active ? '' : ' · inaktiv'}</div>
         </div>
-        <span class="bin-chip ${markedFull ? 'full' : ''}">${markedFull ? 'voll' : `${liters(bin.free_liters)} frei`}</span>
+        <div class="bin-card-count">${bin.item_count}<small>${markedFull ? 'voll' : 'Stück'}</small></div>
       </div>
-      ${markedFull ? '<span class="badge full-mark">voll – nur noch Kleinteile</span>' : ''}
-      <div class="meta">
-        ${markedFull ? 'als voll markiert · rechnerisch ' : ''}${liters(bin.used_liters)} von ${liters(bin.capacity_liters)} belegt · ${bin.item_count} Gegenstände${bin.weight_g ? ` · ${(bin.weight_g / 1000).toFixed(1)} kg` : ''}
-      </div>
-      ${fillMeter(fill, { forcedFull: markedFull })}
-      <div class="actions">
-        <button class="small ghost" data-bin-items="${bin.id}">Inhalt</button>
-        <button class="small ghost" data-edit-bin="${bin.id}">Bearbeiten</button>
-        ${markedFull
-          ? `<button class="small ghost" data-unmark-bin="${bin.id}">Wieder freigeben</button>`
-          : `<button class="small ghost" data-mark-bin="${bin.id}">Kiste voll</button>`}
-      </div>
-      <div data-items-for="${bin.id}"></div>
+      ${bin.item_count > 0 || markedFull ? fillMeter(fill, { forcedFull: markedFull }) : ''}
     </div>`;
+}
+
+/** Kisten-Detail: Liter & Co. erscheinen hier (Klick/Tap auf die Karte). */
+async function openBinDetail(bin) {
+  let items = [];
+  try {
+    ({ items } = await api(`/api/items?bin_id=${bin.id}`));
+  } catch { /* Inhalt optional */ }
+  const fill = Math.max(0, Math.min(100, bin.fill_percent ?? 0));
+  const markedFull = Boolean(bin.marked_full);
+  openDialog({
+    title: `${bin.code}${bin.name ? ` · ${bin.name}` : ''}`,
+    okText: 'Schließen',
+    body: `
+      ${fillMeter(fill, { forcedFull: markedFull, label: markedFull ? 'voll · ' : '' })}
+      <dl class="kv">
+        <dt>Ablageort</dt><dd>${esc([bin.location, bin.shelf].filter(Boolean).join(' · ') || 'ohne Ort')}</dd>
+        <dt>Frei</dt><dd>${liters(bin.free_liters)} von ${liters(bin.capacity_liters)}</dd>
+        <dt>Belegt</dt><dd>${liters(bin.used_liters)} (${Math.round(fill)} %)</dd>
+        <dt>Gegenstände</dt><dd>${bin.item_count}</dd>
+        ${bin.weight_g ? `<dt>Gewicht</dt><dd>${(bin.weight_g / 1000).toFixed(1)} kg</dd>` : ''}
+        <dt>Status</dt><dd>${markedFull ? 'voll markiert – nur noch Kleinteile' : (bin.active ? 'aktiv' : 'inaktiv')}</dd>
+      </dl>
+      <div class="row">
+        <button type="button" class="small ghost" id="bin-detail-edit">✎ Bearbeiten</button>
+        ${markedFull
+          ? '<button type="button" class="small ghost" id="bin-detail-unmark">Wieder freigeben</button>'
+          : '<button type="button" class="small ghost" id="bin-detail-mark">Kiste voll</button>'}
+      </div>
+      <h4 class="bin-detail-head">Inhalt</h4>
+      <div id="bin-detail-items">${items.length
+        ? items.map((it) => `<button type="button" class="bin-item-row" data-open-item="${it.id}"><span>${esc(it.name)}</span><span class="bin-item-qty">${it.quantity > 1 ? `${it.quantity}×` : ''}</span></button>`).join('')
+        : '<p class="muted">Kiste ist leer.</p>'}</div>`,
+    onOk: async () => {},
+  });
+  $('#dialog-ok').hidden = true;
+
+  $$('#bin-detail-items [data-open-item]').forEach((btn) => {
+    btn.addEventListener('click', () => openItemDetail(Number(btn.dataset.openItem)));
+  });
+  $('#bin-detail-edit').addEventListener('click', () => {
+    closeDialog();
+    openBinDialog(bin);
+  });
+  const markBtn = $('#bin-detail-mark');
+  const unmarkBtn = $('#bin-detail-unmark');
+  if (markBtn) {
+    markBtn.addEventListener('click', async () => {
+      try {
+        await api(`/api/bins/${bin.id}/full`, { method: 'POST' });
+        toast('Kiste als voll markiert – nur noch für Kleinteile', 'ok');
+        closeDialog();
+        loadBins();
+      } catch (err) { toast(err.message, 'error'); }
+    });
+  }
+  if (unmarkBtn) {
+    unmarkBtn.addEventListener('click', async () => {
+      try {
+        await api(`/api/bins/${bin.id}/full`, { method: 'DELETE' });
+        toast('Kiste wieder freigegeben', 'ok');
+        closeDialog();
+        loadBins();
+      } catch (err) { toast(err.message, 'error'); }
+    });
+  }
 }
 
 async function toggleBinItems(binId) {
@@ -1603,9 +1654,6 @@ function itemCard(item, { compact = false } = {}) {
     ? `<img class="item-thumb" src="${esc(photoSrc(item.photo_path, item))}" alt="" loading="lazy">`
     : '<div class="item-thumb"></div>';
   const bin = binBadge(item);
-  const dims = item.dims_cm?.length_cm
-    ? `${item.dims_cm.length_cm} × ${item.dims_cm.width_cm} × ${item.dims_cm.height_cm} cm`
-    : '';
   const info = (item.categories?.length ? item.categories.join(', ') : item.category) || '';
   const infoLine = [info, item.brand].filter(Boolean).join(' · ');
   return `
@@ -1619,17 +1667,7 @@ function itemCard(item, { compact = false } = {}) {
           </div>
           ${item.description ? `<div class="meta">${esc(item.description.slice(0, 120))}</div>` : ''}
           <div class="meta">
-            ${[dims, infoLine, `seit ${dateStr(item.created_at)}`].filter(Boolean).join(' · ')}
-            ${item.purchase_price != null ? ` · ${(item.purchase_price).toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}` : ''}
-            ${item.purchase_date ? ` · gekauft ${dateStr(item.purchase_date)}` : ''}
-            ${(item.invoice_link || item.invoice_url) ? ' · Rechnung' : ''}
-            ${item.photos?.length > 1 ? ` · ${item.photos.length} Fotos` : ''}
-          </div>
-          <div class="actions">
-            ${item.bin_id ? '' : `<button class="small primary" data-inbox-assign="${item.id}">Einlagern</button>`}
-            <button class="small ghost" data-edit-item="${item.id}">Bearbeiten</button>
-            <button class="small ghost" data-move-item="${item.id}">Umräumen</button>
-            <button class="small danger" data-delete-item="${item.id}">Entfernen</button>
+            ${[infoLine, `seit ${dateStr(item.created_at)}`].filter(Boolean).join(' · ')}
           </div>
         </div>
       </div>

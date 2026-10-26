@@ -193,12 +193,13 @@ Umgebung gelesen.
      Rechnung öffnet sich aus der App direkt in Paperless.
    * Alternativ Datei hochladen (PDF/JPG/PNG/WebP). Die Rechnung ist danach im
      Artikel verlinkt und direkt abrufbar.
-11. **Kisten** – Füllstand je Kiste als **Balkendiagramm mit Prozentwert**
-   (grün < 75 %, orange ab 75 %, rot ab 95 %), Inhalt ansehen, umräumen,
-   bearbeiten. Ist eine Kiste physisch voll (auch wenn rechnerisch noch Luft
-   ist), lässt sie sich direkt in der Liste über **„Kiste voll"** markieren –
-   Chip, Balken (100 %) und Prozent-Label zeigen dann **„voll"**, der
-   rechnerische Füllstand steht als Zusatzinfo daneben; große Gegenstände werden
+11. **Kisten** – bewusst schlank: pro Kiste nur Code, Name, Ort, Anzahl und ein
+   dünner **Füllstands-Balken** (grün < 75 %, orange ab 75 %, rot ab 95 %).
+   **Liter & Co. erscheinen erst auf Mausover** (Tooltip) bzw. **beim Antippen
+   der Kiste** im Detail-Dialog – dort stehen frei/belegt/Prozent, Gewicht,
+   Status und der **Inhalt**; von dort aus *Bearbeiten* oder **„Kiste voll"**
+   markieren. Ist eine Kiste physisch voll (auch wenn rechnerisch noch Luft
+   ist), zeigen Balken (100 %) und Label **„voll"**; große Gegenstände werden
    dort nicht mehr vorgeschlagen (nur noch Kleinteile bis 2 l). Dasselbe geht
    im Bearbeiten-Dialog über den **Füllstatus**. Im Dialog lässt sich außerdem
    ein **Foto der Kiste (außen)** hinterlegen, das als Vorschaubild erscheint.
@@ -210,9 +211,9 @@ Umgebung gelesen.
    und Rechnungen).
 12. **Ansicht umschalten** – **Raster ist Standard**. In der **Suche** gibt es
    am Desktop einen **Zoom-Regler (3–8 Kacheln pro Reihe)** und die Suche nutzt
-   die **volle Fensterbreite**; auf dem Handy sind es 3 Spalten. Bei
-   Kisten-Inhalt/Posteingang schaltet **„3/Reihe"** auf **2 pro Reihe** um
-   (wird gemerkt), **„Liste"** auf die Listenansicht.
+   die **volle Fensterbreite**; auf dem Handy sind es 3 Spalten. **„Liste"**
+   schaltet die Treffer auf Listenzeilen um. Artikelkarten zeigen nur das
+   Wesentliche – Aktionen und Details öffnen sich per Tipp.
 13. **Artikel ansehen & bearbeiten** – ein Tipp auf Karte oder Kachel öffnet die
    **Ansicht**: große Fotos (antippen = Vollbild), alle Daten, Rechnungslink.
    Erst das **Stift-Symbol ✎** wechselt in den Bearbeiten-Modus (Beschreibung,
