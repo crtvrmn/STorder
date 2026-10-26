@@ -25,7 +25,7 @@ const state = {
   categoryFilter: new Set(),
   categories: [],
   hkSuggestions: [],   // Umlager-Vorschläge (deterministisch)
-  hkIssues: [],        // KI-Prüfung (Maße/Gewicht/Beschreibung)
+  hkIssues: [],        // Logik-Prüfung (Dichte: schwerer als Blei/leichter als Helium)
   hkChecked: 0,
   editorItemId: null,
   taxonomy: [],
@@ -2351,30 +2351,23 @@ $('#search-input').addEventListener('keydown', (event) => {
 
 const HK_LABELS = {
   consolidation: 'Umlagern',
-  dimensions: 'Maße',
-  weight: 'Gewicht',
-  description: 'Beschreibung',
+  density_high: 'Dichte',
+  density_low: 'Dichte',
 };
 
 function hkSuggestionText(s) {
   if (s.type === 'consolidation') {
     return `Nach ${esc(s.target_box.code)}${s.target_box.name ? ` · ${esc(s.target_box.name)}` : ''} umlagern`;
   }
-  if (s.type === 'dimensions') {
-    const cur = s.item.dims_cm ?? {};
-    const now = cur.length_cm ? `${cur.length_cm} × ${cur.width_cm} × ${cur.height_cm} cm` : 'keine Maße';
-    return `neu: ${s.suggested.length_cm} × ${s.suggested.width_cm} × ${s.suggested.height_cm} cm (aktuell ${now})`;
-  }
-  if (s.type === 'weight') {
-    return `neu: ${s.suggested.weight_g} g (aktuell ${s.item.weight_g ?? '—'} g)`;
-  }
-  return `„${esc(String(s.suggested.description ?? '').slice(0, 160))}${String(s.suggested.description ?? '').length > 160 ? '…' : ''}“`;
+  return `Volumen ${esc(s.volume_cm3)} cm³ · Gewicht ${esc(s.weight_g)} g`;
 }
 
 function hkCard(s) {
   const itemName = s.item?.name ?? s.target_item?.name ?? 'Artikel';
   const bin = s.item?.bin?.code ?? '';
-  const applyLabel = s.type === 'consolidation' ? 'Umlagern' : 'Übernehmen';
+  const action = s.type === 'consolidation'
+    ? `<button class="small primary" data-hk-apply="${esc(s.signature)}">Umlagern</button>`
+    : `<button class="small primary" data-hk-edit="${esc(s.item.id)}">Bearbeiten</button>`;
   return `
     <div class="item-card hk-card" data-hk="${esc(s.signature)}">
       <div class="title-row">
@@ -2384,7 +2377,7 @@ function hkCard(s) {
       <p class="hk-message">${esc(s.message)}</p>
       <p class="hk-suggest">${hkSuggestionText(s)}</p>
       <div class="actions">
-        <button class="small primary" data-hk-apply="${esc(s.signature)}">${applyLabel}</button>
+        ${action}
         <button class="small ghost" data-hk-dismiss="${esc(s.signature)}">Nicht mehr vorschlagen</button>
       </div>
     </div>`;
@@ -2397,8 +2390,8 @@ function renderHousekeeping() {
   if (!all.length) {
     summary.textContent = state.hkChecked
       ? `${state.hkChecked} Artikel geprüft – nichts zu beanstanden.`
-      : 'Prüfe deine Daten auf unplausible Maße/Gewicht und auf ähnliche Artikel in verschiedenen Kisten.';
-    list.innerHTML = '<p class="muted">Keine offenen Vorschläge. „KI-Prüfung starten" findet Datenfehler und Beschreibungs-Verbesserungen.</p>';
+      : 'Prüft die Dichte (schwerer als Blei / leichter als Helium) und ähnliche Artikel in verschiedenen Kisten.';
+    list.innerHTML = '<p class="muted">Keine offenen Vorschläge. Die Prüfung läuft automatisch – Maße und Gewicht werden auf Plausibilität geprüft.</p>';
     return;
   }
   summary.textContent = `${all.length} Vorschläge${state.hkChecked ? ` · ${state.hkChecked} Artikel geprüft` : ''}`;
@@ -2408,6 +2401,9 @@ function renderHousekeeping() {
       const s = all.find((x) => x.signature === btn.dataset.hkApply);
       if (s) applyHousekeeping(s);
     });
+  });
+  $$('#housekeeping-list [data-hk-edit]').forEach((btn) => {
+    btn.addEventListener('click', () => openItemEditor(Number(btn.dataset.hkEdit)));
   });
   $$('#housekeeping-list [data-hk-dismiss]').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -2429,6 +2425,7 @@ async function loadHousekeeping() {
   try {
     const data = await api('/api/housekeeping');
     state.hkSuggestions = data.suggestions ?? [];
+    state.hkIssues = data.issues ?? [];
     state.hkChecked = data.checked ?? 0;
     renderHousekeeping();
   } catch (err) {
@@ -2436,47 +2433,9 @@ async function loadHousekeeping() {
   }
 }
 
-async function analyzeHousekeeping() {
-  const btn = $('#btn-housekeeping');
-  btn.disabled = true;
-  const list = $('#housekeeping-list');
-  list.innerHTML = '<p class="status">KI prüft Maße, Gewicht und Beschreibungen…</p>';
-  try {
-    const data = await api('/api/housekeeping/analyze', { method: 'POST', body: {} });
-    state.hkIssues = data.issues ?? [];
-    state.hkChecked = data.checked ?? 0;
-    renderHousekeeping();
-    toast(state.hkIssues.length
-      ? `${state.hkIssues.length} Hinweise gefunden`
-      : 'Keine Auffälligkeiten gefunden', 'ok');
-  } catch (err) {
-    toast(err.message, 'error');
-    renderHousekeeping();
-  } finally {
-    btn.disabled = false;
-  }
-}
-
 async function applyHousekeeping(s) {
   try {
-    if (s.type === 'consolidation') {
-      await api(`/api/items/${s.item.id}/move`, { method: 'POST', body: { bin_id: s.target_box.id } });
-    } else if (s.type === 'dimensions') {
-      await api(`/api/items/${s.item.id}`, {
-        method: 'PUT',
-        body: {
-          dims_cm: {
-            length_cm: s.suggested.length_cm,
-            width_cm: s.suggested.width_cm,
-            height_cm: s.suggested.height_cm,
-          },
-        },
-      });
-    } else if (s.type === 'weight') {
-      await api(`/api/items/${s.item.id}`, { method: 'PUT', body: { weight_g: s.suggested.weight_g } });
-    } else if (s.type === 'description') {
-      await api(`/api/items/${s.item.id}`, { method: 'PUT', body: { description: s.suggested.description } });
-    }
+    await api(`/api/items/${s.item.id}/move`, { method: 'POST', body: { bin_id: s.target_box.id } });
     await api('/api/housekeeping/dismiss', {
       method: 'POST',
       body: { signature: s.signature, reason: 'übernommen' },
@@ -2501,8 +2460,6 @@ async function dismissHousekeeping(s) {
     toast(err.message, 'error');
   }
 }
-
-$('#btn-housekeeping').addEventListener('click', analyzeHousekeeping);
 
 /* ------------------------------- Erinnerung ----------------------------- */
 

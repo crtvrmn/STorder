@@ -23,9 +23,11 @@ automatisch oder manuell eingelagert. Alle Bilder werden auf **max. 1000 px**
 verkleinert und als **WebP** gespeichert.
 
 Der Tab **Aufräumen** hilft beim Sortieren: Er findet ähnliche Artikel in
-verschiedenen Kisten („ESP32 in A1, ähnlicher in K1 – zusammenlegen?") und lässt
-per KI unplausible Maße/Gewicht sowie schwache Beschreibungen prüfen.
-Vorschläge lassen sich übernehmen oder dauerhaft ablehnen.
+verschiedenen Kisten („ESP32 in A1, ähnlicher in K1 – zusammenlegen?") und prüft
+per einfacher Logik die **Dichte** (Gewicht ÷ Volumen): schwerer als Blei
+(11,34 g/cm³) oder leichter als Helium (0,0001786 g/cm³) ist praktisch immer ein
+Maß- oder Gewichtsfehler. Vorschläge lassen sich übernehmen/bearbeiten oder
+dauerhaft ablehnen.
 
 ```
 Handy-Foto ─► LLM (Vision)  ─┐
@@ -163,12 +165,14 @@ Umgebung gelesen.
    listet alle Kisten mit genug Platz. Im Bearbeiten-Dialog gibt es dafür
    **„Nach dem Speichern einlagern"** plus eine Kisten-Auswahl („Automatisch"
    oder eine bestimmte Kiste) – Details speichern und einlagern in einem Schritt.
-8. **Aufräumen (KI)** – Tab **„Aufräumen"**: oben stehen **Umlager-Vorschläge**
-   für ähnliche Artikel in verschiedenen Kisten (z. B. „ESP32 liegt in A1, ein
-   ähnlicher in K1 – zusammenlegen?"). **„KI-Prüfung starten"** lässt das LLM
-   zusätzlich unplausible **Maße/Gewicht** und schwache **Beschreibungen**
-   finden (inkl. Textvorschlag). Jeder Vorschlag lässt sich **übernehmen** oder
-   **„Nicht mehr vorschlagen"** – abgelehnte kommen dauerhaft nicht wieder.
+8. **Aufräumen** – Tab **„Aufräumen"**, prüft automatisch beim Öffnen:
+   * **Umlager-Vorschläge** für ähnliche Artikel in verschiedenen Kisten
+     (z. B. „ESP32 liegt in A1, ein ähnlicher in K1 – zusammenlegen?").
+   * **Dichte-Prüfung**: „schwerer als Blei" (z. B. 50 g bei 1 cm³) oder
+     „leichter als Helium" (z. B. 0,001 g bei 27 m³) – ein sicheres Zeichen für
+     vertauschte Maße/Gewichte. Pro Hinweis gibt es **Bearbeiten**.
+   Jeder Vorschlag lässt sich **übernehmen/bearbeiten** oder **„Nicht mehr
+   vorschlagen"** – abgelehnte kommen dauerhaft nicht wieder.
 9. **Rotes ✕** (statt „Verwerfen“) öffnet drei große Optionen:
    **Passt nicht** (Maße prüfen, Kiste ausschließen, neu suchen),
    **Kiste voll** (Kiste ausschließen, anderen Platz suchen) und
@@ -331,8 +335,7 @@ betreiben (oder hinter VPN/Reverse-Proxy mit Auth).
 | `GET /api/recall` | fällige Gegenstände zur Prüfung |
 | `POST /api/recall/:id` | `{ verdict: keep\|unused\|discard\|not_found }` |
 | `POST/DELETE /api/bins/:id/full` | Kiste als voll markieren / freigeben |
-| `GET /api/housekeeping` | Umlager-Vorschläge (ähnliche Artikel, verschiedene Kisten) |
-| `POST /api/housekeeping/analyze` | KI-Prüfung: Maße/Gewicht/Beschreibung |
+| `GET /api/housekeeping` | Umlager-Vorschläge + Dichte-Hinweise (Blei/Helium) |
 | `POST /api/housekeeping/dismiss` | Vorschlag dauerhaft ausblenden (`{ signature }`) |
 | `GET /api/inbox` | Artikel ohne Kiste (Posteingang) |
 | `POST /api/inbox` | Schnell-Erfassung `{ image, hint? }` → Artikel im Posteingang |

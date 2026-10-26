@@ -1152,47 +1152,42 @@ test('Aufräumen: Umlager-Vorschläge für ähnliche Artikel in anderen Kisten',
   } finally { await t.close(); }
 });
 
-test('Aufräumen: KI-Prüfung (Maße/Gewicht/Beschreibung) mit Ablehnung', async () => {
-  const llm = {
-    isConfigured: true,
-    analyzePhoto: async () => { throw new Error('nicht genutzt'); },
-    lookupProduct: async () => null,
-    async reviewInventory({ items }) {
-      return [
-        { item_id: items[0].id, type: 'weight', severity: 'high', message: 'Gewicht zu hoch', suggested: { weight_g: 120, length_cm: null, width_cm: null, height_cm: null, description: '' } },
-        { item_id: items[0].id, type: 'dimensions', severity: 'medium', message: 'Maße zu groß', suggested: { length_cm: 6, width_cm: 4, height_cm: 2, weight_g: null, description: '' } },
-        { item_id: 999999, type: 'description', severity: 'low', message: 'unbekannt', suggested: { description: 'x' } },
-      ];
-    },
-  };
-
-  const t = await boot({ SEED_BOXES: 'false' }, llm);
-  try {
-    const bin = (await t.call('POST', '/api/bins', { code: 'A1', dims_cm: { length_cm: 80, width_cm: 60, height_cm: 60 } })).json.bin;
-    const item = (await t.call('POST', '/api/items', { name: 'Kabel', bin_id: bin.id, dims_cm: { length_cm: 40, width_cm: 40, height_cm: 40 }, weight_g: 5000, description: 'kaputt' })).json.item;
-
-    const analyzed = await t.call('POST', '/api/housekeeping/analyze', {});
-    assert.equal(analyzed.status, 200);
-    // unbekannte item_id wird verworfen
-    assert.equal(analyzed.json.issues.length, 2);
-    assert.ok(analyzed.json.issues.every((i) => i.item.id === item.id));
-    const weight = analyzed.json.issues.find((i) => i.type === 'weight');
-    assert.equal(weight.suggested.weight_g, 120);
-    assert.match(weight.signature, new RegExp(`^weight:${item.id}:`));
-
-    // Übernehmen (Gewicht) über die normale API
-    await t.call('PUT', `/api/items/${item.id}`, { weight_g: 120 });
-    await t.call('POST', '/api/housekeeping/dismiss', { signature: weight.signature });
-    const next = await t.call('POST', '/api/housekeeping/analyze', {});
-    assert.ok(!next.json.issues.some((i) => i.type === 'weight' && i.item.id === item.id));
-  } finally { await t.close(); }
-});
-
-test('Aufräumen: ohne LLM -> 503', async () => {
+test('Aufräumen: Dichte-Prüfung (schwerer als Blei, leichter als Helium)', async () => {
   const t = await boot();
   try {
-    const res = await t.call('POST', '/api/housekeeping/analyze', {});
-    assert.equal(res.status, 503);
+    const bin = (await t.call('POST', '/api/bins', { code: 'A1', dims_cm: { length_cm: 80, width_cm: 60, height_cm: 60 } })).json.bin;
+    // 1 cm³ bei 50 g -> 50 g/cm³ (Blei: 11,34)
+    const heavy = (await t.call('POST', '/api/items', {
+      name: 'Bleiklotz', bin_id: bin.id, dims_cm: { length_cm: 1, width_cm: 1, height_cm: 1 }, weight_g: 50,
+    })).json.item;
+    // 27.000.000 cm³ bei 0,001 g -> praktisch nichts (Helium: 0,0001786)
+    const light = (await t.call('POST', '/api/items', {
+      name: 'Ballon', dims_cm: { length_cm: 300, width_cm: 300, height_cm: 300 }, weight_g: 0.001,
+    })).json.item;
+
+    const hk = await t.call('GET', '/api/housekeeping');
+    assert.equal(hk.status, 200);
+    const types = hk.json.issues.map((i) => i.type).sort();
+    assert.deepEqual(types, ['density_high', 'density_low']);
+    const high = hk.json.issues.find((i) => i.type === 'density_high');
+    assert.equal(high.item.id, heavy.id);
+    assert.ok(high.density_g_cm3 > 11.34);
+    assert.match(high.message, /schwerer als Blei/);
+    const low = hk.json.issues.find((i) => i.type === 'density_low');
+    assert.equal(low.item.id, light.id);
+    assert.match(low.message, /leichter als Helium/);
+    assert.match(high.signature, /^density:high:/);
+
+    // Ablehnen -> verschwindet
+    await t.call('POST', '/api/housekeeping/dismiss', { signature: high.signature });
+    const again = await t.call('GET', '/api/housekeeping');
+    assert.ok(!again.json.issues.some((i) => i.signature === high.signature));
+    assert.ok(again.json.issues.some((i) => i.item.id === light.id));
+
+    // Gewicht korrigieren -> auch ohne Ablehnung kein Dichte-Hinweis mehr
+    await t.call('PUT', `/api/items/${heavy.id}`, { weight_g: 5 });
+    const fixed = await t.call('GET', '/api/housekeeping');
+    assert.ok(!fixed.json.issues.some((i) => i.item.id === heavy.id));
   } finally { await t.close(); }
 });
 

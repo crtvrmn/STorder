@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { loadConfig } from '../lib/config.js';
-import { createLlmClient, parseJson, normalizeReview, LlmError, LlmNotConfiguredError } from '../lib/llm.js';
+import { createLlmClient, parseJson, LlmError, LlmNotConfiguredError } from '../lib/llm.js';
 
 const completion = (content) => new Response(JSON.stringify({
   id: 'chatcmpl-test',
@@ -143,31 +143,6 @@ test('parseJson akzeptiert Code-Fences und kaputtes JSON', () => {
   assert.equal(parseJson(null), null);
 });
 
-test('normalizeReview: filtert ungültige IDs/Typen und normalisiert Werte', () => {
-  const issues = normalizeReview({
-    data: {
-      issues: [
-        { item_id: 5, type: 'dimensions', severity: 'high', message: 'Kabel zu hoch', suggested: { length_cm: '10 cm', width_cm: 5, height_cm: 2 } },
-        { item_id: 6, type: 'weight', message: 'Tasse zu schwer', suggested: { weight_g: '1,5 kg' } },
-        { item_id: 7, type: 'description', message: 'Beschreibung kaputt', suggested: { description: 'Neue Beschreibung' } },
-        { item_id: 'abc', type: 'weight', message: 'ungültig' },
-        { item_id: 8, type: 'unknown', message: 'falscher Typ' },
-        { item_id: 9, type: 'weight', message: 'ohne Wert' },
-      ],
-    },
-  });
-  assert.equal(issues.length, 3);
-  assert.equal(issues[0].item_id, 5);
-  assert.equal(issues[0].suggested.length_cm, 10);
-  assert.equal(issues[1].suggested.weight_g, 1500);
-  assert.equal(issues[2].suggested.description, 'Neue Beschreibung');
-});
-
-test('normalizeReview: leere/fehlende Daten', () => {
-  assert.deepEqual(normalizeReview({}), []);
-  assert.deepEqual(normalizeReview({ data: { issues: [] } }), []);
-});
-
 test('Schema-Fallback: Provider-400 -> Retry mit json_object', async () => {
   const config = loadConfig({ LLM_API_KEY: 'k', LLM_BASE_URL: 'https://openrouter.ai/api/v1' });
   const formats = [];
@@ -183,17 +158,16 @@ test('Schema-Fallback: Provider-400 -> Retry mit json_object', async () => {
       }
       return new Response(JSON.stringify({
         id: 'x', object: 'chat.completion', created: 1, model: 'm',
-        choices: [{ index: 0, message: { role: 'assistant', content: JSON.stringify({ issues: [{ item_id: 1, type: 'weight', message: 'zu schwer', suggested: { weight_g: 120 } }] }) }, finish_reason: 'stop' }],
+        choices: [{ index: 0, message: { role: 'assistant', content: JSON.stringify({ identified: true, title: 'Kabel', dimensions: { length_cm: 10, width_cm: 2, height_cm: 2 }, confidence: 'low' }) }, finish_reason: 'stop' }],
         usage: {},
       }), { status: 200, headers: { 'content-type': 'application/json' } });
     },
   });
 
-  const issues = await llm.reviewInventory({ items: [{ id: 1, name: 'Kabel' }] });
+  const photo = await llm.analyzePhoto({ imageDataUrl: 'data:image/jpeg;base64,AAAA' });
   assert.equal(calls, 2);
   assert.deepEqual(formats, ['json_schema', 'json_object']);
-  assert.equal(issues.length, 1);
-  assert.equal(issues[0].suggested.weight_g, 120);
+  assert.equal(photo.title, 'Kabel');
 });
 
 test('Provider-400 ohne Schema-Hinweis bleibt Fehler (mit Details)', async () => {
@@ -204,7 +178,7 @@ test('Provider-400 ohne Schema-Hinweis bleibt Fehler (mit Details)', async () =>
     }), { status: 400, headers: { 'content-type': 'application/json' } }),
   });
   await assert.rejects(
-    () => llm.reviewInventory({ items: [{ id: 1, name: 'Kabel' }] }),
+    () => llm.analyzePhoto({ imageDataUrl: 'data:image/jpeg;base64,AAAA' }),
     (err) => err.code === 'LLM_ERROR' && /max context length/.test(err.message) && /Provider returned error/.test(err.message),
   );
 });
