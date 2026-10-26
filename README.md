@@ -118,7 +118,11 @@ Umgebung gelesen.
 1. **Einlagern** – der Bildschirm ist von oben nach unten aufgebaut:
    **1) Hinweis** (optional, z. B. „Toaster"), **2) Automatisch analysieren**
    (Häkchen, standardmäßig an), **3) Foto** – Kamera öffnen – und ganz unten
-   **„Selbst eingeben – KI überspringen"**.
+   **„Selbst eingeben – KI überspringen"**. Im Formular, im Editor und in der
+   Detailansicht gibt es **„🔎 Auf Google suchen"** – sucht den Namen (plus Marke)
+   direkt bei Google.
+   Ein Bild lässt sich auch **per Strg+V (Cmd+V) aus der Zwischenablage** einfügen –
+   z. B. ein Screenshot oder ein kopiertes Produktfoto.
 2. Das Foto wird **schon auf dem Handy verkleinert** (max. 1000 px, WebP), damit
    keine 50-MP-Datei übertragen oder analysiert wird. Das Formular ist **sofort
    bedienbar**, während die Analyse im Hintergrund läuft – Name, Maße und

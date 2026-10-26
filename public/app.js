@@ -31,6 +31,17 @@ const state = {
 
 /* ------------------------------- Helfer --------------------------------- */
 
+const googleUrl = (query) => `https://www.google.com/search?q=${encodeURIComponent(String(query ?? '').trim())}`;
+
+function searchGoogle(query) {
+  const q = String(query ?? '').trim();
+  if (!q) {
+    toast('Kein Name zum Suchen – bitte erst benennen.', 'error');
+    return;
+  }
+  window.open(googleUrl(q), '_blank', 'noopener');
+}
+
 const esc = (value) => String(value ?? '')
   .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
   .replaceAll('"', '&quot;').replaceAll("'", '&#39;');
@@ -284,9 +295,11 @@ async function fileToDataUrl(file, maxSide = 1000) {
   return canvas.toDataURL('image/jpeg', 0.82);
 }
 
-$('#photo-input').addEventListener('change', async (event) => {
-  const file = event.target.files?.[0];
+/** Nimmt ein Foto (Dateiauswahl oder Zwischenablage) auf und startet die Analyse. */
+async function acceptPhoto(file, { fromPaste = false } = {}) {
   if (!file) return;
+  // Läuft schon eine Erfassung? Dann sauber neu beginnen.
+  if (!$('#result').hidden) resetCapture();
   const status = $('#analyze-status');
   status.hidden = false;
   status.className = 'status';
@@ -322,6 +335,37 @@ $('#photo-input').addEventListener('change', async (event) => {
   } catch {
     status.hidden = true;
     toast('Bild konnte nicht gelesen werden.', 'error');
+  }
+  if (fromPaste) toast('Bild eingefügt', 'ok');
+}
+
+$('#photo-input').addEventListener('change', async (event) => {
+  const file = event.target.files?.[0];
+  if (file) await acceptPhoto(file);
+});
+
+// Strg+V / Cmd+V: Bild aus der Zwischenablage übernehmen
+document.addEventListener('paste', async (event) => {
+  if ($('#dialog')?.open) return; // im Editor nicht die Erfassung überschreiben
+  const items = [...(event.clipboardData?.items ?? [])];
+  const imageItem = items.find((it) => String(it.type ?? '').startsWith('image/'));
+  if (!imageItem) return; // Text-Einfügen normal zulassen
+  const file = imageItem.getAsFile?.();
+  if (!file) return;
+  event.preventDefault();
+  if (!document.querySelector('#view-capture').classList.contains('active')) showView('capture');
+  await acceptPhoto(file, { fromPaste: true });
+});
+
+// "Auf Google suchen" (Erfassungsformular + Editor)
+document.addEventListener('click', (event) => {
+  if (event.target.closest('#f-google')) {
+    searchGoogle([$('#f-name')?.value, $('#f-brand')?.value].filter(Boolean).join(' '));
+    return;
+  }
+  if (event.target.closest('#editor-google')) {
+    const form = $('#dialog-form');
+    searchGoogle([form?.elements.name?.value, form?.elements.brand?.value].filter(Boolean).join(' '));
   }
 });
 
@@ -477,6 +521,7 @@ function renderResult() {
       <div class="titles">
         <div id="analysis-badge">${badgeHtml(a)}</div>
         <input id="f-name" type="text" value="${esc(a.title)}" placeholder="Name des Gegenstands">
+        <button type="button" class="small ghost" id="f-google" style="margin-top:6px">🔎 Auf Google suchen</button>
         <small class="muted">Beschreibung und Maße sind Vorschläge – bitte kurz prüfen.</small>
       </div>
     </div>
@@ -1670,6 +1715,7 @@ function renderItemDetail(item) {
         <button type="button" class="small ghost" id="detail-pick">Andere Kiste</button>
       </div>`}
       <div class="row" style="margin-top:6px">
+        <a class="small ghost" href="${googleUrl(`${item.name} ${item.brand ?? ''}`)}" target="_blank" rel="noopener">🔎 Google</a>
         <button type="button" class="${item.bin_id ? 'primary' : 'small ghost'}" id="detail-edit">✎ Bearbeiten</button>
         <button type="button" class="small ghost" id="detail-move">Umräumen</button>
         <button type="button" class="small danger" id="detail-delete">Entfernen</button>
@@ -1797,7 +1843,12 @@ function renderItemEditor(item) {
     title: 'Gegenstand bearbeiten',
     okText: 'Speichern',
     body: `
-      <div class="field"><label>Name</label><input name="name" value="${esc(item.name)}"></div>
+      <div class="field"><label>Name</label>
+        <div class="row">
+          <input name="name" value="${esc(item.name)}">
+          <button type="button" class="small ghost shrink" id="editor-google">🔎 Google</button>
+        </div>
+      </div>
       <div class="field"><label>Beschreibung</label><textarea name="description" placeholder="Was ist das, wofür nutzt du es?">${esc(item.description ?? '')}</textarea></div>
       <div class="grid-2">
         <div class="field"><label>Kategorie</label><input name="category" value="${esc(item.category ?? '')}" placeholder="z. B. Küche"></div>
