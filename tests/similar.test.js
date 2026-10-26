@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { similarityScore, findSimilarItems } from '../lib/similar.js';
+import { similarityScore, findSimilarItems, findConsolidationSuggestions } from '../lib/similar.js';
 
 const items = [
   { id: 1, name: 'Xbox Controller', category: 'Elektronik', brand: 'Microsoft', created_at: '2026-01-01T10:00:00Z' },
@@ -51,4 +51,28 @@ test('findSimilarItems: Kategorie hilft und excludeId filtert', () => {
   assert.equal(excluded.length, 0);
 
   assert.deepEqual(findSimilarItems(items, {}), []);
+});
+
+test('findConsolidationSuggestions: ähnliche Artikel in verschiedenen Kisten', () => {
+  const items = [
+    { id: 1, name: 'ESP32 Dev Board', category: 'Elektronik', bin_id: 1, bin: { id: 1, code: 'A1', name: 'Kabel' }, created_at: '2026-01-01T10:00:00Z' },
+    { id: 2, name: 'ESP32 Board', category: 'Elektronik', bin_id: 2, bin: { id: 2, code: 'K1', name: 'Werkzeug' }, created_at: '2026-02-01T10:00:00Z' },
+    { id: 3, name: 'Toaster', category: 'Küche', bin_id: 1, bin: { id: 1, code: 'A1', name: 'Kabel' }, created_at: '2026-01-01T10:00:00Z' },
+    { id: 4, name: 'ESP32 Sensor', category: 'Elektronik', bin_id: 1, bin: { id: 1, code: 'A1', name: 'Kabel' }, created_at: '2026-01-03T10:00:00Z' },
+  ];
+  const suggestions = findConsolidationSuggestions(items);
+  assert.ok(suggestions.length >= 1);
+  const esp = suggestions.find((s) => s.item.id === 2 && s.target_box.code === 'A1');
+  assert.ok(esp, 'Vorschlag A1 -> K1 fehlt');
+  assert.equal(esp.signature, 'consolidation:2:1');
+  // gleiche Kiste wird nie vorgeschlagen
+  assert.ok(suggestions.every((s) => s.item.bin.id !== s.target_box.id));
+});
+
+test('findConsolidationSuggestions: verschiedene Artikel werden nicht vermischt', () => {
+  const items = [
+    { id: 1, name: 'Toaster', category: 'Küche', bin_id: 1, bin: { id: 1, code: 'A1' }, created_at: '2026-01-01T10:00:00Z' },
+    { id: 2, name: 'Bohrmaschine', category: 'Werkzeug', bin_id: 2, bin: { id: 2, code: 'B1' }, created_at: '2026-01-02T10:00:00Z' },
+  ];
+  assert.deepEqual(findConsolidationSuggestions(items), []);
 });

@@ -24,6 +24,9 @@ const state = {
   gridCols: (Number(localStorage.getItem('storder_cols')) === 2 ? 2 : 3),
   categoryFilter: new Set(),
   categories: [],
+  hkSuggestions: [],   // Umlager-Vorschläge (deterministisch)
+  hkIssues: [],        // KI-Prüfung (Maße/Gewicht/Beschreibung)
+  hkChecked: 0,
 };
 
 /* ------------------------------- Helfer --------------------------------- */
@@ -81,7 +84,7 @@ async function api(path, { method = 'GET', body, signal } = {}) {
 
 /* ------------------------------- Ansichten ------------------------------ */
 
-const VIEWS = ['capture', 'inbox', 'bins', 'search', 'recall'];
+const VIEWS = ['capture', 'inbox', 'bins', 'search', 'housekeeping', 'recall'];
 
 function showView(name, { push = true } = {}) {
   if (!VIEWS.includes(name)) name = 'capture';
@@ -95,6 +98,7 @@ function showView(name, { push = true } = {}) {
   }
   if (name === 'bins') loadBins();
   if (name === 'inbox') loadInbox();
+  if (name === 'housekeeping') loadHousekeeping();
   if (name === 'recall') loadRecall();
   if (name === 'search') {
     $('#search-input').focus();
@@ -292,6 +296,9 @@ $('#photo-input').addEventListener('change', async (event) => {
     const kb = Math.round((dataUrl.length * 0.75) / 1024);
     state.photo = { dataUrl, path: null };
     state.analysis = emptyAnalysis();
+    $('#capture-top').hidden = true;
+    $('#capture-compact').hidden = false;
+    $('#compact-text').textContent = 'Foto bereit';
     const preview = $('#photo-preview');
     preview.src = dataUrl;
     preview.hidden = false;
@@ -303,9 +310,13 @@ $('#photo-input').addEventListener('change', async (event) => {
     renderResult();
     const autoAnalyze = $('#auto-analyze')?.checked ?? true;
     if (autoAnalyze) {
+      $('#capture-spinner').hidden = false;
+      $('#compact-text').textContent = 'Analyse läuft…';
       status.textContent = `Foto verkleinert (${kb} KB). Analyse läuft – du kannst schon Angaben machen…`;
       startAnalysis();
     } else {
+      $('#capture-spinner').hidden = true;
+      $('#compact-text').textContent = 'Foto bereit – bitte selbst eintragen';
       status.textContent = `Foto verkleinert (${kb} KB). Automatische Analyse ist aus – bitte selbst eintragen.`;
     }
   } catch {
@@ -337,6 +348,9 @@ async function startAnalysis() {
     status.className = 'status';
     status.textContent = 'Bild wird analysiert – du kannst schon Angaben machen…';
   }
+  const spinner = $('#capture-spinner');
+  if (spinner) spinner.hidden = false;
+  if ($('#compact-text')) $('#compact-text').textContent = 'Analyse läuft…';
   try {
     const data = await api('/api/analyze', {
       method: 'POST',
@@ -348,6 +362,8 @@ async function startAnalysis() {
     state.photo.path = data.photo.path;
     state.analysis = data.analysis;
     if (status) status.hidden = true;
+    if (spinner) spinner.hidden = true;
+    if ($('#compact-text')) $('#compact-text').textContent = 'Analyse fertig – Angaben prüfen';
     // Wurde in der Zwischenzeit schon eingelagert? Dann nichts mehr ändern.
     if ($('#f-name')) {
       applyAnalysisToForm(data.analysis);
@@ -359,14 +375,22 @@ async function startAnalysis() {
       status.className = 'status error';
       status.textContent = `${err.message} – du kannst die Angaben trotzdem manuell machen.`;
     }
+    const sp = $('#capture-spinner');
+    if (sp) sp.hidden = true;
+    if ($('#compact-text')) $('#compact-text').textContent = 'Analyse fehlgeschlagen – bitte selbst eintragen';
   } finally {
     state.analysisAbort = null;
   }
 }
 
+$('#btn-new-photo').addEventListener('click', () => resetCapture());
+
 $('#btn-manual').addEventListener('click', () => {
   state.skipAnalysis = true;
   state.analysisAbort?.abort();
+  const spinner = $('#capture-spinner');
+  if (spinner) spinner.hidden = true;
+  if ($('#compact-text')) $('#compact-text').textContent = 'KI übersprungen – selbst eingeben';
   const status = $('#analyze-status');
   if (status) {
     status.hidden = false;
@@ -970,6 +994,9 @@ function resetCapture() {
   state.manualBinId = null;
   state.excludedBoxIds = [];
   state.saving = false;
+  $('#capture-top').hidden = false;
+  $('#capture-compact').hidden = true;
+  $('#capture-spinner').hidden = true;
   $('#photo-preview').hidden = true;
   $('#photo-preview').src = '';
   $('#photo-placeholder').hidden = false;
@@ -2173,6 +2200,163 @@ $('#btn-search').addEventListener('click', runSearch);
 $('#search-input').addEventListener('keydown', (event) => {
   if (event.key === 'Enter') { event.preventDefault(); runSearch(); }
 });
+
+/* -------------------------------- Aufräumen ----------------------------- */
+
+const HK_LABELS = {
+  consolidation: 'Umlagern',
+  dimensions: 'Maße',
+  weight: 'Gewicht',
+  description: 'Beschreibung',
+};
+
+function hkSuggestionText(s) {
+  if (s.type === 'consolidation') {
+    return `Nach ${esc(s.target_box.code)}${s.target_box.name ? ` · ${esc(s.target_box.name)}` : ''} umlagern`;
+  }
+  if (s.type === 'dimensions') {
+    const cur = s.item.dims_cm ?? {};
+    const now = cur.length_cm ? `${cur.length_cm} × ${cur.width_cm} × ${cur.height_cm} cm` : 'keine Maße';
+    return `neu: ${s.suggested.length_cm} × ${s.suggested.width_cm} × ${s.suggested.height_cm} cm (aktuell ${now})`;
+  }
+  if (s.type === 'weight') {
+    return `neu: ${s.suggested.weight_g} g (aktuell ${s.item.weight_g ?? '—'} g)`;
+  }
+  return `„${esc(String(s.suggested.description ?? '').slice(0, 160))}${String(s.suggested.description ?? '').length > 160 ? '…' : ''}“`;
+}
+
+function hkCard(s) {
+  const itemName = s.item?.name ?? s.target_item?.name ?? 'Artikel';
+  const bin = s.item?.bin?.code ?? '';
+  const applyLabel = s.type === 'consolidation' ? 'Umlagern' : 'Übernehmen';
+  return `
+    <div class="item-card hk-card" data-hk="${esc(s.signature)}">
+      <div class="title-row">
+        <span class="badge hk-${esc(s.type)}">${HK_LABELS[s.type] ?? s.type}</span>
+        <span class="meta">${bin ? `${esc(bin)} · ` : ''}${esc(itemName)}</span>
+      </div>
+      <p class="hk-message">${esc(s.message)}</p>
+      <p class="hk-suggest">${hkSuggestionText(s)}</p>
+      <div class="actions">
+        <button class="small primary" data-hk-apply="${esc(s.signature)}">${applyLabel}</button>
+        <button class="small ghost" data-hk-dismiss="${esc(s.signature)}">Nicht mehr vorschlagen</button>
+      </div>
+    </div>`;
+}
+
+function renderHousekeeping() {
+  const list = $('#housekeeping-list');
+  const summary = $('#housekeeping-summary');
+  const all = [...state.hkSuggestions, ...state.hkIssues];
+  if (!all.length) {
+    summary.textContent = state.hkChecked
+      ? `${state.hkChecked} Artikel geprüft – nichts zu beanstanden.`
+      : 'Prüfe deine Daten auf unplausible Maße/Gewicht und auf ähnliche Artikel in verschiedenen Kisten.';
+    list.innerHTML = '<p class="muted">Keine offenen Vorschläge. „KI-Prüfung starten" findet Datenfehler und Beschreibungs-Verbesserungen.</p>';
+    return;
+  }
+  summary.textContent = `${all.length} Vorschläge${state.hkChecked ? ` · ${state.hkChecked} Artikel geprüft` : ''}`;
+  list.innerHTML = all.map(hkCard).join('');
+  $$('#housekeeping-list [data-hk-apply]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const s = all.find((x) => x.signature === btn.dataset.hkApply);
+      if (s) applyHousekeeping(s);
+    });
+  });
+  $$('#housekeeping-list [data-hk-dismiss]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const s = all.find((x) => x.signature === btn.dataset.hkDismiss);
+      if (s) dismissHousekeeping(s);
+    });
+  });
+}
+
+function removeHk(signature) {
+  state.hkSuggestions = state.hkSuggestions.filter((s) => s.signature !== signature);
+  state.hkIssues = state.hkIssues.filter((s) => s.signature !== signature);
+  renderHousekeeping();
+}
+
+async function loadHousekeeping() {
+  const list = $('#housekeeping-list');
+  list.innerHTML = '<p class="status">Prüfe Daten…</p>';
+  try {
+    const data = await api('/api/housekeeping');
+    state.hkSuggestions = data.suggestions ?? [];
+    state.hkChecked = data.checked ?? 0;
+    renderHousekeeping();
+  } catch (err) {
+    list.innerHTML = `<p class="status error">${esc(err.message)}</p>`;
+  }
+}
+
+async function analyzeHousekeeping() {
+  const btn = $('#btn-housekeeping');
+  btn.disabled = true;
+  const list = $('#housekeeping-list');
+  list.innerHTML = '<p class="status">KI prüft Maße, Gewicht und Beschreibungen…</p>';
+  try {
+    const data = await api('/api/housekeeping/analyze', { method: 'POST', body: {} });
+    state.hkIssues = data.issues ?? [];
+    state.hkChecked = data.checked ?? 0;
+    renderHousekeeping();
+    toast(state.hkIssues.length
+      ? `${state.hkIssues.length} Hinweise gefunden`
+      : 'Keine Auffälligkeiten gefunden', 'ok');
+  } catch (err) {
+    toast(err.message, 'error');
+    renderHousekeeping();
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function applyHousekeeping(s) {
+  try {
+    if (s.type === 'consolidation') {
+      await api(`/api/items/${s.item.id}/move`, { method: 'POST', body: { bin_id: s.target_box.id } });
+    } else if (s.type === 'dimensions') {
+      await api(`/api/items/${s.item.id}`, {
+        method: 'PUT',
+        body: {
+          dims_cm: {
+            length_cm: s.suggested.length_cm,
+            width_cm: s.suggested.width_cm,
+            height_cm: s.suggested.height_cm,
+          },
+        },
+      });
+    } else if (s.type === 'weight') {
+      await api(`/api/items/${s.item.id}`, { method: 'PUT', body: { weight_g: s.suggested.weight_g } });
+    } else if (s.type === 'description') {
+      await api(`/api/items/${s.item.id}`, { method: 'PUT', body: { description: s.suggested.description } });
+    }
+    await api('/api/housekeeping/dismiss', {
+      method: 'POST',
+      body: { signature: s.signature, reason: 'übernommen' },
+    });
+    toast('Übernommen', 'ok');
+    removeHk(s.signature);
+    refreshItemViews();
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
+async function dismissHousekeeping(s) {
+  try {
+    await api('/api/housekeeping/dismiss', {
+      method: 'POST',
+      body: { signature: s.signature, reason: 'abgelehnt' },
+    });
+    removeHk(s.signature);
+    toast('Wird nicht mehr vorgeschlagen', 'ok');
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
+$('#btn-housekeeping').addEventListener('click', analyzeHousekeeping);
 
 /* ------------------------------- Erinnerung ----------------------------- */
 

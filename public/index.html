@@ -26,6 +26,7 @@
     <!-- Start / Einlagern -->
     <section id="view-capture" class="view active">
       <div class="card upload-card">
+        <div id="capture-top">
         <!-- 1) Hinweis -->
         <div class="field">
           <label for="hint"><span class="step-num">1</span> Hinweis (optional)</label>
@@ -51,6 +52,15 @@
             <small>Tippen, um die Kamera zu öffnen</small>
           </span>
         </label>
+
+        </div>
+
+        <!-- Nach dem Foto: oben ausblenden, kompakt mit Spinner -->
+        <div id="capture-compact" class="capture-compact" hidden>
+          <span id="capture-spinner" class="spinner" hidden></span>
+          <span id="compact-text">Foto bereit</span>
+          <button type="button" class="small ghost" id="btn-new-photo">Neues Foto</button>
+        </div>
 
         <p id="analyze-status" class="status" hidden></p>
 
@@ -112,6 +122,16 @@
       <div id="inbox-list" class="list"></div>
     </section>
 
+    <!-- Aufräumen (Housekeeping) -->
+    <section id="view-housekeeping" class="view">
+      <div class="view-head">
+        <h2>Aufräumen</h2>
+        <button class="small primary" id="btn-housekeeping" type="button">KI-Prüfung starten</button>
+      </div>
+      <p class="muted" id="housekeeping-summary"></p>
+      <div id="housekeeping-list" class="list"></div>
+    </section>
+
     <!-- Erinnerung -->
     <section id="view-recall" class="view">
       <div class="view-head">
@@ -128,6 +148,7 @@
     <button class="tab" data-view="inbox"><span>✉</span>Posteingang<span id="inbox-count" class="tab-badge" hidden>0</span></button>
     <button class="tab" data-view="bins"><span>▤</span>Kisten</button>
     <button class="tab" data-view="search"><span>⌕</span>Suche</button>
+    <button class="tab" data-view="housekeeping"><span>🧹</span>Aufräumen</button>
     <button class="tab" data-view="recall"><span>↻</span>Prüfen</button>
   </nav>
 

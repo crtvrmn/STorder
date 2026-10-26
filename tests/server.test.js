@@ -6,6 +6,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { once } from 'node:events';
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
 import { loadConfig } from '../lib/config.js';
 import { openDatabase, seedBins } from '../src/db.js';
 import { createApp } from '../src/server.js';
@@ -1119,5 +1121,75 @@ test('Suche: Kategorien-Liste und Filter', async () => {
 
     const combined = await t.call('GET', '/api/search?q=toaster&categories=Werkzeug');
     assert.equal(combined.json.items.length, 0);
+  } finally { await t.close(); }
+});
+
+test('Aufräumen: Umlager-Vorschläge für ähnliche Artikel in anderen Kisten', async () => {
+  const t = await boot();
+  try {
+    const a = (await t.call('POST', '/api/bins', { code: 'A1', dims_cm: { length_cm: 80, width_cm: 60, height_cm: 60 } })).json.bin;
+    const b = (await t.call('POST', '/api/bins', { code: 'K1', dims_cm: { length_cm: 80, width_cm: 60, height_cm: 60 } })).json.bin;
+    await t.call('POST', '/api/items', { name: 'ESP32 Dev Board', category: 'Elektronik', bin_id: a.id, dims_cm: { length_cm: 8, width_cm: 5, height_cm: 2 } });
+    await sleep(10); // created_at unterscheidbar
+    const second = (await t.call('POST', '/api/items', { name: 'ESP32 Board', category: 'Elektronik', bin_id: b.id, dims_cm: { length_cm: 8, width_cm: 5, height_cm: 2 } })).json.item;
+
+    const hk = await t.call('GET', '/api/housekeeping');
+    assert.equal(hk.status, 200);
+    assert.ok(hk.json.suggestions.length >= 1, JSON.stringify(hk.json));
+    const suggestion = hk.json.suggestions.find((s) => s.type === 'consolidation');
+    assert.ok(suggestion);
+    assert.equal(suggestion.item.id, second.id);
+    assert.equal(suggestion.target_box.code, 'A1');
+    assert.match(suggestion.signature, /^consolidation:\d+:\d+$/);
+
+    // ablehnen -> verschwindet
+    const dismissed = await t.call('POST', '/api/housekeeping/dismiss', { signature: suggestion.signature });
+    assert.equal(dismissed.status, 200);
+    const again = await t.call('GET', '/api/housekeeping');
+    assert.equal(again.json.suggestions.length, 0);
+  } finally { await t.close(); }
+});
+
+test('Aufräumen: KI-Prüfung (Maße/Gewicht/Beschreibung) mit Ablehnung', async () => {
+  const llm = {
+    isConfigured: true,
+    analyzePhoto: async () => { throw new Error('nicht genutzt'); },
+    lookupProduct: async () => null,
+    async reviewInventory({ items }) {
+      return [
+        { item_id: items[0].id, type: 'weight', severity: 'high', message: 'Gewicht zu hoch', suggested: { weight_g: 120, length_cm: null, width_cm: null, height_cm: null, description: '' } },
+        { item_id: items[0].id, type: 'dimensions', severity: 'medium', message: 'Maße zu groß', suggested: { length_cm: 6, width_cm: 4, height_cm: 2, weight_g: null, description: '' } },
+        { item_id: 999999, type: 'description', severity: 'low', message: 'unbekannt', suggested: { description: 'x' } },
+      ];
+    },
+  };
+
+  const t = await boot({ SEED_BOXES: 'false' }, llm);
+  try {
+    const bin = (await t.call('POST', '/api/bins', { code: 'A1', dims_cm: { length_cm: 80, width_cm: 60, height_cm: 60 } })).json.bin;
+    const item = (await t.call('POST', '/api/items', { name: 'Kabel', bin_id: bin.id, dims_cm: { length_cm: 40, width_cm: 40, height_cm: 40 }, weight_g: 5000, description: 'kaputt' })).json.item;
+
+    const analyzed = await t.call('POST', '/api/housekeeping/analyze', {});
+    assert.equal(analyzed.status, 200);
+    // unbekannte item_id wird verworfen
+    assert.equal(analyzed.json.issues.length, 2);
+    assert.ok(analyzed.json.issues.every((i) => i.item.id === item.id));
+    const weight = analyzed.json.issues.find((i) => i.type === 'weight');
+    assert.equal(weight.suggested.weight_g, 120);
+    assert.match(weight.signature, new RegExp(`^weight:${item.id}:`));
+
+    // Übernehmen (Gewicht) über die normale API
+    await t.call('PUT', `/api/items/${item.id}`, { weight_g: 120 });
+    await t.call('POST', '/api/housekeeping/dismiss', { signature: weight.signature });
+    const next = await t.call('POST', '/api/housekeeping/analyze', {});
+    assert.ok(!next.json.issues.some((i) => i.type === 'weight' && i.item.id === item.id));
+  } finally { await t.close(); }
+});
+
+test('Aufräumen: ohne LLM -> 503', async () => {
+  const t = await boot();
+  try {
+    const res = await t.call('POST', '/api/housekeeping/analyze', {});
+    assert.equal(res.status, 503);
   } finally { await t.close(); }
 });

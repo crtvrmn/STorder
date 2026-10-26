@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { loadConfig } from '../lib/config.js';
-import { createLlmClient, parseJson, LlmError, LlmNotConfiguredError } from '../lib/llm.js';
+import { createLlmClient, parseJson, normalizeReview, LlmError, LlmNotConfiguredError } from '../lib/llm.js';
 
 const completion = (content) => new Response(JSON.stringify({
   id: 'chatcmpl-test',
@@ -141,4 +141,29 @@ test('parseJson akzeptiert Code-Fences und kaputtes JSON', () => {
   assert.equal(parseJson('kein json'), null);
   assert.equal(parseJson(''), null);
   assert.equal(parseJson(null), null);
+});
+
+test('normalizeReview: filtert ungültige IDs/Typen und normalisiert Werte', () => {
+  const issues = normalizeReview({
+    data: {
+      issues: [
+        { item_id: 5, type: 'dimensions', severity: 'high', message: 'Kabel zu hoch', suggested: { length_cm: '10 cm', width_cm: 5, height_cm: 2 } },
+        { item_id: 6, type: 'weight', message: 'Tasse zu schwer', suggested: { weight_g: '1,5 kg' } },
+        { item_id: 7, type: 'description', message: 'Beschreibung kaputt', suggested: { description: 'Neue Beschreibung' } },
+        { item_id: 'abc', type: 'weight', message: 'ungültig' },
+        { item_id: 8, type: 'unknown', message: 'falscher Typ' },
+        { item_id: 9, type: 'weight', message: 'ohne Wert' },
+      ],
+    },
+  });
+  assert.equal(issues.length, 3);
+  assert.equal(issues[0].item_id, 5);
+  assert.equal(issues[0].suggested.length_cm, 10);
+  assert.equal(issues[1].suggested.weight_g, 1500);
+  assert.equal(issues[2].suggested.description, 'Neue Beschreibung');
+});
+
+test('normalizeReview: leere/fehlende Daten', () => {
+  assert.deepEqual(normalizeReview({}), []);
+  assert.deepEqual(normalizeReview({ data: { issues: [] } }), []);
 });

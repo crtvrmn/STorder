@@ -22,6 +22,11 @@ Posteingang und werden später am PC oder Handy in Ruhe durchgesehen, ergänzt u
 automatisch oder manuell eingelagert. Alle Bilder werden auf **max. 1000 px**
 verkleinert und als **WebP** gespeichert.
 
+Der Tab **Aufräumen** hilft beim Sortieren: Er findet ähnliche Artikel in
+verschiedenen Kisten („ESP32 in A1, ähnlicher in K1 – zusammenlegen?") und lässt
+per KI unplausible Maße/Gewicht sowie schwache Beschreibungen prüfen.
+Vorschläge lassen sich übernehmen oder dauerhaft ablehnen.
+
 ```
 Handy-Foto ─► LLM (Vision)  ─┐
               LLM (Websuche) ─┴─► Beschreibung + Maße + Gewicht
@@ -124,7 +129,9 @@ Umgebung gelesen.
    Für den Ablageort zählen die Maße (L × B × H); daraus berechnet Storder das
    Volumen. Alternativ kannst du ein Volumen in Litern eintragen. Häkchen aus =
    keine Analyse, alles manuell; der Knopf unten öffnet das Formular auch ohne
-   Foto und bricht eine laufende Analyse ab.
+   Foto und bricht eine laufende Analyse ab. Nach dem Foto wird der obere
+   Bereich **eingeklappt** (Spinner + „Neues Foto"), damit das Formular mehr
+   Platz hat.
 3. Der Ablageort erscheint automatisch – **passend zur Kategorie**: „Küche“
    landet eher in *Küche & Vorrat* als in *Dokumente & Papier*, auch wenn dort
    mehr Platz frei wäre. Kisten, die inhaltlich passen, sind mit ★ markiert.
@@ -152,11 +159,17 @@ Umgebung gelesen.
    listet alle Kisten mit genug Platz. Im Bearbeiten-Dialog gibt es dafür
    **„Nach dem Speichern einlagern"** plus eine Kisten-Auswahl („Automatisch"
    oder eine bestimmte Kiste) – Details speichern und einlagern in einem Schritt.
-8. **Rotes ✕** (statt „Verwerfen“) öffnet drei große Optionen:
+8. **Aufräumen (KI)** – Tab **„Aufräumen"**: oben stehen **Umlager-Vorschläge**
+   für ähnliche Artikel in verschiedenen Kisten (z. B. „ESP32 liegt in A1, ein
+   ähnlicher in K1 – zusammenlegen?"). **„KI-Prüfung starten"** lässt das LLM
+   zusätzlich unplausible **Maße/Gewicht** und schwache **Beschreibungen**
+   finden (inkl. Textvorschlag). Jeder Vorschlag lässt sich **übernehmen** oder
+   **„Nicht mehr vorschlagen"** – abgelehnte kommen dauerhaft nicht wieder.
+9. **Rotes ✕** (statt „Verwerfen“) öffnet drei große Optionen:
    **Passt nicht** (Maße prüfen, Kiste ausschließen, neu suchen),
    **Kiste voll** (Kiste ausschließen, anderen Platz suchen) und
    **Verwerfen** (Eingabe komplett verwerfen).
-9. **Artikel bearbeiten** – in Suche oder Kisteninhalt auf *Bearbeiten*:
+10. **Artikel bearbeiten** – in Suche oder Kisteninhalt auf *Bearbeiten*:
    Beschreibung, Kategorie, Marke, **Kaufdatum**, **Kaufpreis (optional)**,
    weitere **Fotos** (mehrere, jederzeit ergänz-, **dreh- und löschbar**) sowie die
    **Originalrechnung**:
@@ -167,7 +180,7 @@ Umgebung gelesen.
      Rechnung öffnet sich aus der App direkt in Paperless.
    * Alternativ Datei hochladen (PDF/JPG/PNG/WebP). Die Rechnung ist danach im
      Artikel verlinkt und direkt abrufbar.
-10. **Kisten** – Füllstand je Kiste als **Balkendiagramm mit Prozentwert**
+11. **Kisten** – Füllstand je Kiste als **Balkendiagramm mit Prozentwert**
    (grün < 75 %, orange ab 75 %, rot ab 95 %), Inhalt ansehen, umräumen,
    bearbeiten. Ist eine Kiste physisch voll (auch wenn rechnerisch noch Luft
    ist), lässt sie sich direkt in der Liste über **„Kiste voll"** markieren –
@@ -182,21 +195,21 @@ Umgebung gelesen.
    **Kiste entfernen** fragt, ob der Inhalt erhalten bleiben soll (Gegenstände
    sind danach „ohne Kiste") oder **mit der Kiste gelöscht** wird (inkl. Fotos
    und Rechnungen).
-11. **Ansicht umschalten** – **Raster ist Standard** (3 Kacheln pro Reihe); der
+12. **Ansicht umschalten** – **Raster ist Standard** (3 Kacheln pro Reihe); der
    Knopf **„3/Reihe"** schaltet auf **2 pro Reihe** um (wird gemerkt), der
    Knopf **„Liste"** auf die Listenansicht. Gilt für Kisten-Inhalt, Suche und
    Posteingang.
-12. **Artikel ansehen & bearbeiten** – ein Tipp auf Karte oder Kachel öffnet die
+13. **Artikel ansehen & bearbeiten** – ein Tipp auf Karte oder Kachel öffnet die
    **Ansicht**: große Fotos (antippen = Vollbild), alle Daten, Rechnungslink.
    Erst das **Stift-Symbol ✎** wechselt in den Bearbeiten-Modus (Beschreibung,
    Kategorie, Marke, **Maße/Gewicht/Form**, Stückzahl, Kaufdaten, Fotos,
    Rechnung). Geänderte Maße werden in der Kiste **neu platziert**; passt der
    Gegenstand nicht mehr, bleibt alles unverändert und es erscheint ein Hinweis.
-13. **Suche** – findet über Name, Beschreibung, Marke, Kategorie, Kisten-Code und
+14. **Suche** – findet über Name, Beschreibung, Marke, Kategorie, Kisten-Code und
    Ort (z. B. „A23“ oder „Werkstatt“). Über die **Kategorie-Chips** (mit Anzahl)
    lässt sich der Bestand filtern, auch mehrere Kategorien gleichzeitig; „Alle"
    hebt den Filter auf.
-14. **Prüfen** – nach dem eingestellten Zeitraum erscheinen zufällige
+15. **Prüfen** – nach dem eingestellten Zeitraum erscheinen zufällige
    Gegenstände: *Behalte ich*, *Nutze ich nicht*, *Aussortieren* oder
    *Nicht gefunden*. Aussortierte wandern aus dem Bestand.
 
@@ -296,6 +309,9 @@ betreiben (oder hinter VPN/Reverse-Proxy mit Auth).
 | `GET /api/recall` | fällige Gegenstände zur Prüfung |
 | `POST /api/recall/:id` | `{ verdict: keep\|unused\|discard\|not_found }` |
 | `POST/DELETE /api/bins/:id/full` | Kiste als voll markieren / freigeben |
+| `GET /api/housekeeping` | Umlager-Vorschläge (ähnliche Artikel, verschiedene Kisten) |
+| `POST /api/housekeeping/analyze` | KI-Prüfung: Maße/Gewicht/Beschreibung |
+| `POST /api/housekeeping/dismiss` | Vorschlag dauerhaft ausblenden (`{ signature }`) |
 | `GET /api/inbox` | Artikel ohne Kiste (Posteingang) |
 | `POST /api/inbox` | Schnell-Erfassung `{ image, hint? }` → Artikel im Posteingang |
 | `POST /api/inbox/assign` | Stapel einlagern (`{ ids? }`, leer = alle) |

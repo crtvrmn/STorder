@@ -22,7 +22,7 @@ import { createLlmClient } from '../lib/llm.js';
 import { createPaperlessClient } from '../lib/paperless.js';
 import { validateBoxInput, ValidationError } from '../lib/validate.js';
 import { suggestPlacement } from '../lib/suggest.js';
-import { findSimilarItems } from '../lib/similar.js';
+import { findSimilarItems, findConsolidationSuggestions } from '../lib/similar.js';
 import { analyzeImage } from './analyze.js';
 import { selectRecallItems, toRecallItem } from './recall.js';
 import {
@@ -37,6 +37,8 @@ import {
   deleteBinWithItems,
   markBinFull,
   setBinPhoto,
+  dismissSuggestion,
+  listDismissedSuggestions,
   listItems,
   getItem,
   createItem,
@@ -779,6 +781,74 @@ export function createApp({ config, db, llm, paperless }) {
       res.json({ assigned, failed, remaining: inbox.length - assigned.length });
     }),
   );
+
+  /* ------------------------------ Aufräumen ----------------------------- */
+
+  /** Deterministische Vorschläge: gleiche/ähnliche Artikel in verschiedenen Kisten. */
+  app.get('/api/housekeeping', (req, res) => {
+    const items = listItems(db, { status: 'stored', limit: 500 });
+    const dismissed = listDismissedSuggestions(db);
+    const suggestions = findConsolidationSuggestions(items)
+      .filter((s) => !dismissed.has(s.signature));
+    res.json({ suggestions, checked: items.length, dismissed: dismissed.size });
+  });
+
+  /** KI-Prüfung: unplausible Maße/Gewicht und schwache Beschreibungen. */
+  app.post(
+    '/api/housekeeping/analyze',
+    route(async (req, res) => {
+      if (!llm.isConfigured) {
+        throw new HttpError(503, 'Für die KI-Prüfung muss ein LLM konfiguriert sein (API-Key).');
+      }
+      const items = listItems(db, { status: 'stored', limit: 200 });
+      const byId = new Map(items.map((it) => [it.id, it]));
+      const reviewed = await llm.reviewInventory({ items });
+      const dismissed = listDismissedSuggestions(db);
+
+      const issues = [];
+      for (const issue of reviewed) {
+        const item = byId.get(issue.item_id);
+        if (!item) continue; // KI darf nur vorhandene Artikel bewerten
+        // Signatur bezieht sich auf den Vorschlag (nicht auf den Ist-Zustand):
+        // so bleibt "nicht mehr vorschlagen" auch nach dem Übernehmen stabil.
+        const fingerprint = crypto.createHash('sha1')
+          .update(JSON.stringify(issue.suggested))
+          .digest('hex')
+          .slice(0, 12);
+        const signature = `${issue.type}:${item.id}:${fingerprint}`;
+        if (dismissed.has(signature)) continue;
+
+        const s = issue.suggested;
+        const hasDims = s.length_cm && s.width_cm && s.height_cm;
+        if (issue.type === 'dimensions' && !hasDims) continue;
+        if (issue.type === 'weight' && !s.weight_g) continue;
+        if (issue.type === 'description' && !s.description) continue;
+
+        issues.push({
+          ...issue,
+          signature,
+          item: {
+            id: item.id,
+            name: item.name,
+            category: item.category,
+            dims_cm: item.dims_cm,
+            weight_g: item.weight_g,
+            description: item.description,
+            bin: item.bin ? { id: item.bin.id, code: item.bin.code, name: item.bin.name } : null,
+          },
+        });
+      }
+      res.json({ issues, checked: items.length });
+    }),
+  );
+
+  /** Vorschlag ablehnen – wird danach nicht mehr angezeigt. */
+  app.post('/api/housekeeping/dismiss', (req, res) => {
+    const signature = String(req.body?.signature ?? '').trim();
+    if (!signature) throw new HttpError(400, 'Signatur fehlt.');
+    dismissSuggestion(db, signature, req.body?.reason);
+    res.json({ dismissed: true, signature });
+  });
 
   /* ------------------------------ Erinnerung ---------------------------- */
 

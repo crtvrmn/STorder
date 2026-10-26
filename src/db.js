@@ -100,6 +100,13 @@ CREATE TABLE IF NOT EXISTS reviews (
 );
 
 CREATE INDEX IF NOT EXISTS idx_reviews_item ON reviews(item_id);
+
+-- Abgelehnte Aufräum-Vorschläge (werden nicht erneut vorgeschlagen)
+CREATE TABLE IF NOT EXISTS dismissed_suggestions (
+  signature TEXT PRIMARY KEY,
+  reason TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL
+);
 `;
 
 const now = () => new Date().toISOString();
@@ -853,6 +860,20 @@ export function reviewItem(db, id, verdict, { note = '', intervalDays = 30 } = {
     db.prepare(`UPDATE items SET last_reviewed_at=?, next_review_at=?, keep_count = keep_count + 1, updated_at=? WHERE id=?`).run(t, next, t, id);
   }
   return getItem(db, id);
+}
+
+/** Aufräum-Vorschlag ablehnen/ausblenden. */
+export function dismissSuggestion(db, signature, reason = '') {
+  const sig = String(signature ?? '').trim();
+  if (!sig) throw new HttpError(400, 'Signatur fehlt.');
+  db.prepare('INSERT OR REPLACE INTO dismissed_suggestions (signature, reason, created_at) VALUES (?, ?, ?)')
+    .run(sig, String(reason).slice(0, 300), now());
+  return true;
+}
+
+/** Alle abgelehnten Vorschlags-Signaturen. */
+export function listDismissedSuggestions(db) {
+  return new Set(db.prepare('SELECT signature FROM dismissed_suggestions').all().map((r) => r.signature));
 }
 
 export function listReviews(db, itemId = null, { limit = 50 } = {}) {
