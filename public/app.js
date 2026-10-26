@@ -826,7 +826,8 @@ function renderSuggestion(s) {
     box.innerHTML = `
       <button type="button" class="suggestion pickable" id="btn-pick-box">
         <span class="suggestion-head">
-          <strong>Ablageort: ${esc(chosen.code)}${chosen.name ? ` · ${esc(chosen.name)}` : ''}</strong>
+          ${binBadge(chosen)}
+          <strong>${esc(chosen.name || chosen.code)}</strong>
           ${chosen.category_match ? '<span class="badge cat">Kategorie passt</span>' : ''}
           ${manual ? '<span class="badge">manuell gewählt</span>' : ''}
           ${chosen.marked_full ? '<span class="badge full-mark">voll – nur Kleinteile</span>' : ''}
@@ -1378,13 +1379,20 @@ $('[data-action="new-bin"]').addEventListener('click', () => openBinDialog(null)
 
 /* ------------------------------- Gegenstände ---------------------------- */
 
+/** Ablageort als gut sichtbare Badge (Kiste oder Posteingang). */
+function binBadge(entity) {
+  const box = entity?.bin ?? entity;
+  if (box?.code) {
+    return `<span class="bin-badge" title="Ablageort: ${esc(box.code)}${box.name ? ` · ${esc(box.name)}` : ''}">📦 ${esc(box.code)}</span>`;
+  }
+  return '<span class="bin-badge empty" title="Noch kein Ablageort">📥 Posteingang</span>';
+}
+
 function itemCard(item, { compact = false } = {}) {
   const photo = item.photo_path
     ? `<img class="item-thumb" src="${esc(photoSrc(item.photo_path, item))}" alt="" loading="lazy">`
     : '<div class="item-thumb"></div>';
-  const bin = item.bin
-    ? `<span class="bin-chip">${esc(item.bin.code)}</span>`
-    : '<span class="bin-chip" style="background:color-mix(in srgb, var(--warn) 18%, transparent);color:var(--warn)">Posteingang</span>';
+  const bin = binBadge(item);
   const dims = item.dims_cm?.length_cm
     ? `${item.dims_cm.length_cm} × ${item.dims_cm.width_cm} × ${item.dims_cm.height_cm} cm`
     : '';
@@ -1424,10 +1432,10 @@ function itemGridCard(item) {
   return `
     <button type="button" class="grid-item" data-open-item="${item.id}" title="${esc(item.name)}">
       ${photo}
+      <span class="grid-bin-overlay">${binBadge(item)}</span>
       <span class="grid-name">${esc(item.name)}</span>
       <span class="grid-meta">
         ${item.quantity > 1 ? `<span class="badge qty">${item.quantity}×</span>` : ''}
-        ${item.bin ? `<span class="grid-bin">${esc(item.bin.code)}</span>` : ''}
       </span>
     </button>`;
 }
@@ -1710,6 +1718,10 @@ function renderItemDetail(item) {
     okText: 'Schließen',
     body: `
       ${gallery}
+      <div class="detail-bin-row">
+        ${binBadge(item)}
+        <span class="muted">${item.bin ? esc([item.bin.name, item.bin.location].filter(Boolean).join(' · ')) : 'noch nicht eingelagert'}</span>
+      </div>
       ${item.quantity > 1 ? `<p><span class="badge qty">${item.quantity}× vorhanden</span></p>` : ''}
       ${item.description ? `<p class="detail-desc">${esc(item.description)}</p>` : ''}
       <dl class="kv">
@@ -1910,93 +1922,6 @@ async function addPhotosToEditor(files) {
   } catch (err) { toast(err.message, 'error'); }
 }
 
-function setupEditorImageSearch(item) {
-  const panel = $('#editor-image-panel');
-  const input = $('#editor-image-q');
-  const status = $('#editor-image-status');
-  const results = $('#editor-image-results');
-  const importBtn = $('#editor-image-import');
-  const selected = new Map();
-
-  const setStatus = (text, error = false) => {
-    status.hidden = !text;
-    status.className = error ? 'status error' : 'status';
-    status.textContent = text;
-  };
-  const updateImport = () => {
-    importBtn.disabled = selected.size === 0;
-    importBtn.textContent = selected.size ? `Auswahl importieren (${selected.size})` : 'Auswahl importieren';
-  };
-
-  async function doSearch() {
-    const q = input.value.trim();
-    if (q.length < 2) { toast('Bitte einen Suchbegriff eingeben.', 'error'); return; }
-    setStatus('Suche Bilder…');
-    results.innerHTML = '';
-    selected.clear();
-    updateImport();
-    try {
-      const data = await api(`/api/images/search?q=${encodeURIComponent(q)}`);
-      const list = data.results ?? [];
-      if (!list.length) { setStatus('Keine Bilder gefunden.'); return; }
-      setStatus(`${list.length} Bilder – antippen zum Auswählen`);
-      results.innerHTML = list.map((r, i) => `
-        <button type="button" class="image-option" data-image-index="${i}" title="${esc(r.title)}${r.creator ? ` – ${esc(r.creator)}` : ''}${r.license ? ` (${esc(r.license)})` : ''}">
-          <img src="${esc(r.thumbnail || r.url)}" alt="" loading="lazy" referrerpolicy="no-referrer">
-          <span class="image-check">✓</span>
-        </button>`).join('');
-      $$('#editor-image-results .image-option').forEach((btn) => {
-        btn.addEventListener('click', () => {
-          const r = list[Number(btn.dataset.imageIndex)];
-          if (selected.has(r.url)) {
-            selected.delete(r.url);
-            btn.classList.remove('selected');
-          } else {
-            selected.set(r.url, r);
-            btn.classList.add('selected');
-          }
-          updateImport();
-        });
-      });
-    } catch (err) {
-      setStatus(err.message, true);
-    }
-  }
-
-  $('#editor-image-search').addEventListener('click', () => {
-    panel.hidden = !panel.hidden;
-    if (!panel.hidden) {
-      if (!input.value.trim()) input.value = [item.name, item.brand].filter(Boolean).join(' ');
-      doSearch();
-    }
-  });
-  $('#editor-image-go').addEventListener('click', doSearch);
-  input.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter') { event.preventDefault(); doSearch(); }
-  });
-  $('#editor-image-close').addEventListener('click', () => { panel.hidden = true; });
-  importBtn.addEventListener('click', async () => {
-    if (!selected.size) return;
-    importBtn.disabled = true;
-    try {
-      const { item: updated, failed } = await api(`/api/items/${state.editorItemId}/photos/import`, {
-        method: 'POST',
-        body: { urls: [...selected.keys()] },
-      });
-      appendEditorPhotos(updated);
-      const ok = selected.size - (failed?.length ?? 0);
-      toast(`${ok} Bild(er) importiert${failed?.length ? `, ${failed.length} fehlgeschlagen` : ''}`, failed?.length ? 'error' : 'ok');
-      refreshItemViews();
-      panel.hidden = true;
-    } catch (err) {
-      toast(err.message, 'error');
-    } finally {
-      updateImport();
-    }
-  });
-  updateImport();
-}
-
 function renderItemEditor(item) {
   const price = item.purchase_price != null
     ? String(item.purchase_price).replace('.', ',')
@@ -2061,27 +1986,11 @@ function renderItemEditor(item) {
       <div class="field">
         <label id="editor-photo-count">Fotos (${item.photos?.length ?? 0})</label>
         <div class="photo-grid">${photos || '<p class="muted">Noch keine Fotos.</p>'}</div>
-        <div class="row">
-          <label class="upload-btn shrink">
-            <input type="file" accept="image/*" multiple id="editor-add-photos">
-            <span>＋ Fotos</span>
-          </label>
-          <button type="button" class="small ghost shrink" id="editor-image-search">🔎 Bilder suchen</button>
-        </div>
+        <label class="upload-btn">
+          <input type="file" accept="image/*" multiple id="editor-add-photos">
+          <span>＋ Fotos hinzufügen</span>
+        </label>
         <p class="muted">Tipp: Bilder aus der Zwischenablage mit <kbd>Strg</kbd>+<kbd>V</kbd> einfügen.</p>
-
-        <div id="editor-image-panel" class="image-panel" hidden>
-          <div class="searchbar">
-            <input id="editor-image-q" type="search" placeholder="Bildersuche, z. B. Produktname" enterkeyhint="search">
-            <button type="button" class="small primary" id="editor-image-go">Suchen</button>
-          </div>
-          <p class="muted" id="editor-image-status" hidden></p>
-          <div id="editor-image-results" class="image-results"></div>
-          <div class="row">
-            <button type="button" class="small primary" id="editor-image-import" disabled>Auswahl importieren</button>
-            <button type="button" class="small ghost" id="editor-image-close">Schließen</button>
-          </div>
-        </div>
       </div>
 
       <div class="field">
@@ -2157,7 +2066,6 @@ function renderItemEditor(item) {
     event.target.value = '';
   });
   bindEditorPhotoButtons();
-  setupEditorImageSearch(item);
 
   // --- Rechnung ---
   $('#editor-add-invoice').addEventListener('change', async (event) => {

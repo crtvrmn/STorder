@@ -23,7 +23,6 @@ import { createPaperlessClient } from '../lib/paperless.js';
 import { validateBoxInput, ValidationError } from '../lib/validate.js';
 import { suggestPlacement } from '../lib/suggest.js';
 import { findSimilarItems, findConsolidationSuggestions } from '../lib/similar.js';
-import { searchImages } from '../lib/imagesearch.js';
 import { analyzeImage } from './analyze.js';
 import { selectRecallItems, toRecallItem } from './recall.js';
 import {
@@ -463,61 +462,6 @@ export function createApp({ config, db, llm, paperless }) {
     }),
   );
 
-  /** Bilder von URLs (z. B. Bildersuche) importieren. */
-  app.post(
-    '/api/items/:id/photos/import',
-    route(async (req, res) => {
-      const id = Number(req.params.id);
-      const item = getItem(db, id);
-      if (!item) throw new HttpError(404, 'Gegenstand nicht gefunden.');
-      const urls = [...new Set((Array.isArray(req.body?.urls) ? req.body.urls : [])
-        .map((u) => String(u ?? '').trim())
-        .filter(Boolean))].slice(0, 6);
-      if (!urls.length) throw new HttpError(400, 'Keine Bild-URLs übermittelt.');
-
-      const limit = Math.min(config.upload.imagesPerItem, MAX_ITEM_PHOTOS);
-      const room = limit - (item.photos?.length ?? 0);
-      if (room <= 0) throw new HttpError(400, `Maximal ${limit} Fotos pro Gegenstand.`);
-
-      const prepared = [];
-      const failed = [];
-      for (const url of urls.slice(0, room)) {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), config.imagesearch.timeoutMs);
-        try {
-          if (!/^https?:\/\//i.test(url)) throw new Error('nur http(s)-URLs erlaubt');
-          const response = await fetch(url, {
-            signal: controller.signal,
-            redirect: 'follow',
-            headers: { accept: 'image/*', 'user-agent': 'Storder/1.0' },
-          });
-          if (!response.ok) throw new Error(`HTTP ${response.status}`);
-          const type = String(response.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase();
-          if (!type.startsWith('image/')) throw new Error('keine Bilddatei');
-          const declared = Number(response.headers.get('content-length') || 0);
-          if (declared > config.upload.maxBytes) throw new Error('Bild ist zu groß');
-          const buffer = Buffer.from(await response.arrayBuffer());
-          if (!buffer.length) throw new Error('Bild ist leer');
-          if (buffer.length > config.upload.maxBytes) throw new Error('Bild ist zu groß');
-          const photo = await preparePhoto(config, `data:${type};base64,${buffer.toString('base64')}`);
-          prepared.push(photo.path);
-        } catch (err) {
-          failed.push({
-            url,
-            reason: err?.name === 'AbortError' ? 'Zeitüberschreitung' : String(err?.message ?? err),
-          });
-        } finally {
-          clearTimeout(timer);
-        }
-      }
-      if (!prepared.length) {
-        throw new HttpError(502, `Kein Bild konnte geladen werden${failed[0] ? `: ${failed[0].reason}` : ''}.`);
-      }
-      const updated = addItemPhotos(db, id, prepared, { limit });
-      res.json({ item: updated, imported: prepared, failed });
-    }),
-  );
-
   app.delete('/api/items/:id/photos/:name', (req, res) => {
     const id = Number(req.params.id);
     const name = path.basename(String(req.params.name));
@@ -527,23 +471,6 @@ export function createApp({ config, db, llm, paperless }) {
     if (fs.existsSync(file)) fs.rmSync(file, { force: true });
     res.json({ item });
   });
-
-  /* --------------------------- Bildersuche ------------------------------ */
-
-  app.get(
-    '/api/images/search',
-    route(async (req, res) => {
-      const query = String(req.query.q ?? '').trim();
-      if (query.length < 2) throw new HttpError(400, 'Bitte einen Suchbegriff angeben.');
-      const results = await searchImages(query, {
-        limit: config.imagesearch.results,
-        provider: config.imagesearch.provider,
-        openverseUrl: config.imagesearch.url || undefined,
-        timeoutMs: config.imagesearch.timeoutMs,
-      });
-      res.json({ query, results });
-    }),
-  );
 
   /* ---------------------------- Rechnung -------------------------------- */
 
