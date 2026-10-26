@@ -23,6 +23,7 @@ import { createPaperlessClient } from '../lib/paperless.js';
 import { validateBoxInput, ValidationError } from '../lib/validate.js';
 import { suggestPlacement } from '../lib/suggest.js';
 import { findSimilarItems, findConsolidationSuggestions } from '../lib/similar.js';
+import { CATEGORY_TAXONOMY, normalizeCategories } from '../lib/categories.js';
 import { analyzeImage } from './analyze.js';
 import { selectRecallItems, toRecallItem } from './recall.js';
 import {
@@ -635,12 +636,17 @@ export function createApp({ config, db, llm, paperless }) {
     res.json({ query, categories, items: searchItems(db, query, { limit, status, categories }) });
   });
 
-  /** Kategorien mit Anzahl (für die Filter-Chips in der Suche). */
+  /** Vorgegebene Kategorien + verwendete Kategorien mit Anzahl. */
   app.get('/api/categories', (req, res) => {
-    const rows = db.prepare(`SELECT MIN(category) AS name, COUNT(*) AS count
-      FROM items WHERE status = 'stored' AND TRIM(category) <> ''
-      GROUP BY LOWER(TRIM(category)) ORDER BY count DESC, name`).all();
-    res.json({ categories: rows });
+    const items = listItems(db, { status: 'stored', limit: 5000 });
+    const counts = new Map();
+    for (const item of items) {
+      for (const cat of item.categories ?? []) counts.set(cat, (counts.get(cat) ?? 0) + 1);
+    }
+    const categories = [...counts.entries()]
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'de'));
+    res.json({ categories, taxonomy: CATEGORY_TAXONOMY });
   });
 
   /* ------------------------- Foto + KI-Analyse ------------------------- */
@@ -662,6 +668,10 @@ export function createApp({ config, db, llm, paperless }) {
         },
         opts: { webLookup: req.body?.web_lookup !== false },
       });
+      // KI-Kategorie auf die vorgegebene Taxonomie abbilden.
+      const canonical = normalizeCategories([analysis.category]);
+      analysis.category = canonical[0] ?? '';
+      analysis.categories = canonical;
       res.json({
         analysis,
         photo: { path: photo.path, name: photo.name, bytes: photo.bytes },

@@ -310,6 +310,8 @@ test('Foto-Pipeline: sharp verkleinert, LLM-Antwort wird übernommen, Foto abruf
     assert.equal(a.dims_cm.length_cm, 31);
     assert.equal(a.weight_g, 1700);
     assert.ok(a.volume_liters > 0);
+    assert.equal(a.category, 'Küche');
+    assert.deepEqual(a.categories, ['Küche']);
     assert.match(res.json.photo.path, /^\/api\/photos\/[a-z0-9-]+\.webp$/);
     assert.ok(calls[0].hint.includes('Küchengerät'));
 
@@ -1191,5 +1193,78 @@ test('Aufräumen: ohne LLM -> 503', async () => {
   try {
     const res = await t.call('POST', '/api/housekeeping/analyze', {});
     assert.equal(res.status, 503);
+  } finally { await t.close(); }
+});
+
+test('Kategorien: Taxonomie, Mehrfachzuordnung und Suche', async () => {
+  const t = await boot();
+  try {
+    const cats = await t.call('GET', '/api/categories');
+    assert.equal(cats.status, 200);
+    assert.ok(Array.isArray(cats.json.taxonomy));
+    assert.ok(cats.json.taxonomy.includes('Elektronik'));
+    assert.ok(cats.json.taxonomy.includes('USB & Kabel'));
+
+    const bin = (await t.call('POST', '/api/bins', { code: 'A1', dims_cm: { length_cm: 80, width_cm: 60, height_cm: 60 } })).json.bin;
+    const created = await t.call('POST', '/api/items', {
+      name: 'USB-Hub',
+      bin_id: bin.id,
+      categories: ['Elektronik', 'USB & Kabel'],
+      dims_cm: { length_cm: 10, width_cm: 5, height_cm: 2 },
+    });
+    assert.equal(created.status, 201);
+    assert.deepEqual(created.json.item.categories, ['Elektronik', 'USB & Kabel']);
+    assert.equal(created.json.item.category, 'Elektronik');
+
+    // Alias wird abgebildet
+    const alias = await t.call('POST', '/api/items', {
+      name: 'NAS',
+      bin_id: bin.id,
+      category: 'Netzwerkspeicher (NAS)',
+      dims_cm: { length_cm: 20, width_cm: 20, height_cm: 20 },
+    });
+    assert.deepEqual(alias.json.item.categories, ['Netzwerk']);
+
+    // Update ersetzt die Liste
+    const updated = await t.call('PUT', `/api/items/${created.json.item.id}`, { categories: ['Computer & Zubehör'] });
+    assert.deepEqual(updated.json.item.categories, ['Computer & Zubehör']);
+
+    const search = await t.call('GET', '/api/search?categories=Computer%20%26%20Zubeh%C3%B6r');
+    assert.equal(search.json.items.length, 1);
+    assert.equal(search.json.items[0].name, 'USB-Hub');
+
+    const counts = await t.call('GET', '/api/categories');
+    const byName = Object.fromEntries(counts.json.categories.map((c) => [c.name, c.count]));
+    assert.equal(byName['Computer & Zubehör'], 1);
+    assert.equal(byName.Netzwerk, 1);
+    assert.equal(byName.Elektronik, undefined);
+  } finally { await t.close(); }
+});
+
+test('Analyse: KI-Kategorie wird auf die Taxonomie abgebildet', async () => {
+  const { default: sharp } = await import('sharp');
+  const jpeg = await sharp({ create: { width: 300, height: 200, channels: 3, background: '#888' } }).jpeg().toBuffer();
+  const llm = {
+    async analyzePhoto() {
+      return {
+        identified: true,
+        title: 'USB-Netzteil',
+        description: 'Netzteil mit USB-Anschluss.',
+        brand: '',
+        category: 'Elektronikzubehör',
+        shape: 'irregular',
+        dimensions: { length_cm: 8, width_cm: 5, height_cm: 3 },
+        weight_g: 120,
+        confidence: 'medium',
+      };
+    },
+    async lookupProduct() { return { found: false }; },
+  };
+  const t = await boot({ LLM_API_KEY: 'test-key' }, llm);
+  try {
+    const res = await t.call('POST', '/api/analyze', { image: `data:image/jpeg;base64,${jpeg.toString('base64')}` });
+    assert.equal(res.status, 200);
+    assert.equal(res.json.analysis.category, 'Elektronik');
+    assert.deepEqual(res.json.analysis.categories, ['Elektronik', 'USB & Kabel']);
   } finally { await t.close(); }
 });

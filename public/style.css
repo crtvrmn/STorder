@@ -320,11 +320,40 @@ button { font: inherit; cursor: pointer; }
   background: color-mix(in srgb, var(--bg) 80%, transparent);
   backdrop-filter: blur(3px);
 }
-.detail-bin-row {
+.detail-place {
   display: flex;
   align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line));
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg-soft));
+}
+.detail-place-label {
+  width: 100%;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--muted);
+}
+.detail-place .bin-badge { font-size: 0.95rem; padding: 5px 12px; }
+.detail-place-name { font-weight: 600; }
+
+.detail-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 8px;
-  margin: 2px 0 8px;
+  margin-top: 10px;
+}
+.detail-actions > * {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  text-align: center;
+  box-sizing: border-box;
 }
 .bin-chip {
   font-size: 0.75rem;

@@ -6,8 +6,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { normalizeDimensions, computeRequiredVolume } from '../lib/geometry.js';
 import { findFreePosition, analyzeBox, boxExtentsCm, parseAxes } from '../lib/placement.js';
+import { normalizeCategories } from '../lib/categories.js';
 
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 
 /** Obergrenze für Fotos pro Gegenstand. */
 export const MAX_ITEM_PHOTOS = 12;
@@ -51,6 +52,7 @@ CREATE TABLE IF NOT EXISTS items (
   description TEXT NOT NULL DEFAULT '',
   brand TEXT NOT NULL DEFAULT '',
   category TEXT NOT NULL DEFAULT '',
+  categories TEXT NOT NULL DEFAULT '',
   source_url TEXT NOT NULL DEFAULT '',
   shape TEXT NOT NULL DEFAULT '',
   length_cm REAL,
@@ -130,6 +132,7 @@ const COLUMN_MIGRATIONS = {
     photo_path: "TEXT NOT NULL DEFAULT ''",
   },
   items: {
+    categories: "TEXT NOT NULL DEFAULT ''",
     purchase_date: 'TEXT',
     purchase_price_cents: 'INTEGER',
     invoice_path: 'TEXT',
@@ -147,6 +150,18 @@ function migrateColumns(db) {
     for (const [name, type] of Object.entries(columns)) {
       if (!existing.has(name)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${type}`);
     }
+  }
+}
+
+/** Altbestand: freie Kategorie-Texte auf die Mehrfach-Taxonomie abbilden. */
+function migrateCategories(db) {
+  const rows = db.prepare(`SELECT id, category FROM items
+    WHERE TRIM(COALESCE(categories, '')) = '' AND TRIM(COALESCE(category, '')) <> ''`).all();
+  const update = db.prepare('UPDATE items SET categories = ?, category = ? WHERE id = ?');
+  for (const row of rows) {
+    const cats = normalizeCategories([row.category]);
+    const list = cats.length ? cats : ['Sonstiges'];
+    update.run(list.join('|'), list[0], row.id);
   }
 }
 
@@ -182,6 +197,7 @@ export function openDatabase(dataDir) {
   db.exec('PRAGMA busy_timeout = 5000;');
   db.exec(SCHEMA);
   migrateColumns(db);
+  migrateCategories(db);
   db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)').run('schema_version', String(SCHEMA_VERSION));
   return { db, file };
 }
@@ -414,7 +430,14 @@ function rowToItem(row, bin = null) {
     name: row.name,
     description: row.description,
     brand: row.brand,
-    category: row.category,
+    category: (() => {
+      const list = String(row.categories ?? '').split('|').map((c) => c.trim()).filter(Boolean);
+      return list[0] ?? row.category;
+    })(),
+    categories: (() => {
+      const list = String(row.categories ?? '').split('|').map((c) => c.trim()).filter(Boolean);
+      return list.length ? list : (row.category ? [row.category] : []);
+    })(),
     source_url: row.source_url,
     shape: row.shape,
     dims_cm: {
@@ -520,17 +543,19 @@ export function createItem(db, input, { nextReviewAt = null } = {}) {
 
   const t = now();
   const photos = asArray(input.photos);
+  const categories = normalizeCategories(input.categories ?? input.category);
   const info = db.prepare(`INSERT INTO items
-    (bin_id, name, description, brand, category, source_url, shape, length_cm, width_cm, height_cm, weight_g,
+    (bin_id, name, description, brand, category, categories, source_url, shape, length_cm, width_cm, height_cm, weight_g,
      volume_liters, volume_confidence, volume_method, x_cm, y_cm, z_cm, size_cm, rotation, photo_path, photos,
      purchase_date, purchase_price_cents, invoice_path, invoice_name, quantity,
      ai_raw, next_review_at, status, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
     bin?.id ?? null,
     name,
     String(input.description ?? '').trim(),
     String(input.brand ?? '').trim(),
-    String(input.category ?? '').trim(),
+    categories[0] ?? '',
+    categories.join('|'),
     String(input.source_url ?? '').trim(),
     String(input.shape ?? '').trim(),
     dims?.a ?? null,
@@ -634,7 +659,11 @@ export function updateItem(db, id, patch) {
   }
   if (patch.description != null) set('description', String(patch.description).trim());
   if (patch.brand != null) set('brand', String(patch.brand).trim());
-  if (patch.category != null) set('category', String(patch.category).trim());
+  if (patch.categories !== undefined || patch.category !== undefined) {
+    const cats = normalizeCategories(patch.categories ?? patch.category);
+    set('categories', cats.join('|'));
+    set('category', cats[0] ?? '');
+  }
   if (patch.shape != null) set('shape', String(patch.shape).trim());
   if (patch.quantity !== undefined) set('quantity', clampQuantity(patch.quantity));
   if (patch.purchase_date !== undefined) set('purchase_date', normalizeDate(patch.purchase_date));
@@ -782,7 +811,7 @@ export function deleteItem(db, id) {
 /* --------------------------------- Suche -------------------------------- */
 
 // Suchfelder getrennt nach Tabelle, damit der JOIN eindeutig bleibt.
-const ITEM_SEARCH_FIELDS = ['i.name', 'i.description', 'i.brand', 'i.category'];
+const ITEM_SEARCH_FIELDS = ['i.name', 'i.description', 'i.brand', 'i.category', 'i.categories'];
 const BIN_SEARCH_FIELDS = ['b.code', 'b.name', 'b.location', 'b.shelf'];
 
 /**
@@ -796,10 +825,10 @@ export function searchItems(db, query, { limit = 60, status = 'stored', categori
     .filter(Boolean);
   const base = `SELECT i.* FROM items i LEFT JOIN bins b ON b.id = i.bin_id WHERE i.status = ?`;
   const catSql = cats.length
-    ? ` AND LOWER(TRIM(i.category)) IN (${cats.map(() => '?').join(',')})`
+    ? ` AND (${cats.map(() => `('|' || LOWER(i.categories) || '|') LIKE ?`).join(' OR ')})`
     : '';
   if (!terms.length) {
-    const rows = db.prepare(`${base}${catSql} ORDER BY i.created_at DESC LIMIT ?`).all(status, ...cats, limit);
+    const rows = db.prepare(`${base}${catSql} ORDER BY i.created_at DESC LIMIT ?`).all(status, ...cats.map((c) => `%|${c}|%`), limit);
     const bins = binMap(db, rows.map((r) => r.bin_id));
     return rows.map((r) => rowToItem(r, bins.get(r.bin_id) ?? null));
   }
@@ -812,7 +841,7 @@ export function searchItems(db, query, { limit = 60, status = 'stored', categori
     params.push(...fields.map(() => like));
   }
   const sql = `${base}${catSql} AND ${where.join(' AND ')} ORDER BY i.created_at DESC LIMIT ?`;
-  const rows = db.prepare(sql).all(status, ...cats, ...params, limit);
+  const rows = db.prepare(sql).all(status, ...cats.map((c) => `%|${c}|%`), ...params, limit);
   const bins = binMap(db, rows.map((r) => r.bin_id));
   return rows.map((r) => rowToItem(r, bins.get(r.bin_id) ?? null));
 }

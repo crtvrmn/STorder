@@ -28,6 +28,7 @@ const state = {
   hkIssues: [],        // KI-Prüfung (Maße/Gewicht/Beschreibung)
   hkChecked: 0,
   editorItemId: null,
+  taxonomy: [],
 };
 
 /* ------------------------------- Helfer --------------------------------- */
@@ -42,6 +43,36 @@ function searchGoogle(query) {
   }
   window.open(googleUrl(q), '_blank', 'noopener');
 }
+
+const CATEGORY_FALLBACK = [
+  'Elektronik', 'Computer & Zubehör', 'Netzwerk', 'USB & Kabel', 'Smart Home',
+  'Messen & Prüfen', 'Werkzeug', 'Haushalt', 'Küche', 'Bad & Pflege',
+  'Büro & Papier', 'Kleidung', 'Reise', 'Sport & Freizeit', 'Garten',
+  'Fahrzeug', 'Basteln & Kleben', 'Verpackung & Versand', 'Spielzeug', 'Sonstiges',
+];
+
+function categoryList() {
+  return state.taxonomy?.length ? state.taxonomy : CATEGORY_FALLBACK;
+}
+
+function categoryPickerHtml(selected = [], id = 'category-picker') {
+  const sel = new Set((selected ?? []).filter(Boolean));
+  return `<div class="cat-picker" id="${id}">${categoryList().map((c) => (
+    `<button type="button" class="chip${sel.has(c) ? ' active' : ''}" data-cat="${esc(c)}">${esc(c)}</button>`
+  )).join('')}</div>`;
+}
+
+function selectedCategories(container) {
+  if (!container) return [];
+  return [...container.querySelectorAll('.chip.active')].map((b) => b.dataset.cat);
+}
+
+// Kategorie-Chips (nur in Pickern, nicht in der Suchfilter-Leiste)
+document.addEventListener('click', (event) => {
+  const chip = event.target.closest('.cat-picker [data-cat]');
+  if (!chip) return;
+  chip.classList.toggle('active');
+});
 
 const esc = (value) => String(value ?? '')
   .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
@@ -538,9 +569,12 @@ function renderResult() {
       <textarea id="f-description" placeholder="Was ist das?">${esc(a.description ?? '')}</textarea>
     </div>
 
-    <div class="grid-2" style="margin-top:10px">
-      <div class="field"><label>Marke</label><input id="f-brand" value="${esc(a.brand ?? '')}"></div>
-      <div class="field"><label>Kategorie</label><input id="f-category" value="${esc(a.category ?? '')}" placeholder="z. B. Küche"></div>
+    <div class="field" style="margin-top:10px"><label>Marke</label><input id="f-brand" value="${esc(a.brand ?? '')}"></div>
+
+    <div class="field" style="margin-top:10px">
+      <label>Kategorien</label>
+      ${categoryPickerHtml([a.category], 'f-categories')}
+      <small class="muted">Mehrfachauswahl – z. B. Elektronik + USB &amp; Kabel</small>
     </div>
 
     <div class="field" style="margin-top:10px">
@@ -597,7 +631,7 @@ function renderResult() {
     $('#f-shape').dataset.touched = '1';
     scheduleSuggest();
   });
-  for (const id of ['f-name', 'f-category']) {
+  for (const id of ['f-name']) {
     $(`#${id}`).addEventListener('input', scheduleSimilar);
   }
   scheduleSimilar();
@@ -625,7 +659,12 @@ function applyAnalysisToForm(a) {
   setIfEmpty('#f-name', a.title);
   setIfEmpty('#f-description', a.description);
   setIfEmpty('#f-brand', a.brand);
-  setIfEmpty('#f-category', a.category);
+  const catPicker = $('#f-categories');
+  if (catPicker && !selectedCategories(catPicker).length && a.category) {
+    $$('.chip', catPicker).forEach((chip) => {
+      if (chip.dataset.cat === a.category) chip.classList.add('active');
+    });
+  }
   const d = a.dims_cm ?? {};
   setIfEmpty('#f-length', d.length_cm);
   setIfEmpty('#f-width', d.width_cm);
@@ -662,7 +701,7 @@ function currentForm() {
     name: $('#f-name')?.value.trim() ?? '',
     description: $('#f-description')?.value.trim() ?? '',
     brand: $('#f-brand')?.value.trim() ?? '',
-    category: $('#f-category')?.value.trim() ?? '',
+    categories: selectedCategories($('#f-categories')),
     shape: $('#f-shape')?.value ?? 'irregular',
     dims_cm: currentDims(),
     weight_g: num($('#f-weight')?.value),
@@ -725,7 +764,7 @@ async function loadSuggestion() {
         shape: $('#f-shape')?.value,
         volume_liters: volume,
         // Kategorie/Name steuern, welche Kiste inhaltlich passt (z. B. Küche -> B1).
-        category: $('#f-category')?.value.trim() || undefined,
+        category: selectedCategories($('#f-categories'))[0] || undefined,
         name: $('#f-name')?.value.trim() || undefined,
         quantity,
         // Ähnlicher Artikel schon eingelagert? Dessen Kiste bevorzugen.
@@ -754,7 +793,7 @@ async function loadSimilar() {
   const box = $('#similar-box');
   if (!box) return;
   const name = $('#f-name')?.value.trim() || '';
-  const category = $('#f-category')?.value.trim() || '';
+  const category = selectedCategories($('#f-categories'))[0] || '';
   if (!name && !category) {
     state.similar = [];
     box.innerHTML = '';
@@ -1396,7 +1435,8 @@ function itemCard(item, { compact = false } = {}) {
   const dims = item.dims_cm?.length_cm
     ? `${item.dims_cm.length_cm} × ${item.dims_cm.width_cm} × ${item.dims_cm.height_cm} cm`
     : '';
-  const info = [item.category, item.brand].filter(Boolean).join(' · ');
+  const info = (item.categories?.length ? item.categories.join(', ') : item.category) || '';
+  const infoLine = [info, item.brand].filter(Boolean).join(' · ');
   return `
     <div class="item-card" data-item="${item.id}">
       <div class="card-main">
@@ -1408,7 +1448,7 @@ function itemCard(item, { compact = false } = {}) {
           </div>
           ${item.description ? `<div class="meta">${esc(item.description.slice(0, 120))}</div>` : ''}
           <div class="meta">
-            ${[dims, info, `seit ${dateStr(item.created_at)}`].filter(Boolean).join(' · ')}
+            ${[dims, infoLine, `seit ${dateStr(item.created_at)}`].filter(Boolean).join(' · ')}
             ${item.purchase_price != null ? ` · ${(item.purchase_price).toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}` : ''}
             ${item.purchase_date ? ` · gekauft ${dateStr(item.purchase_date)}` : ''}
             ${(item.invoice_link || item.invoice_url) ? ' · Rechnung' : ''}
@@ -1569,7 +1609,7 @@ async function analyzeInboxItem(id, imageDataUrl, hint, autoNamed) {
     const patch = {
       description: analysis.description,
       brand: analysis.brand,
-      category: analysis.category,
+      categories: analysis.categories ?? (analysis.category ? [analysis.category] : []),
       shape: analysis.shape,
       quantity: analysis.quantity,
     };
@@ -1682,13 +1722,9 @@ function detailRows(item) {
   const price = item.purchase_price != null
     ? item.purchase_price.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })
     : null;
-  const bin = item.bin
-    ? `${item.bin.code}${item.bin.name ? ` · ${item.bin.name}` : ''}${item.bin.location ? ` (${item.bin.location})` : ''}`
-    : 'Posteingang';
   return [
-    ['Ablageort', bin],
     ['Stückzahl', item.quantity > 1 ? `${item.quantity}×` : null],
-    ['Kategorie', item.category || null],
+    ['Kategorien', item.categories?.length ? item.categories.join(' · ') : (item.category || null)],
     ['Marke', item.brand || null],
     ['Maße', dims],
     ['Gewicht', item.weight_g ? `${item.weight_g} g` : null],
@@ -1717,11 +1753,12 @@ function renderItemDetail(item) {
     title: item.name,
     okText: 'Schließen',
     body: `
-      ${gallery}
-      <div class="detail-bin-row">
+      <div class="detail-place">
+        <span class="detail-place-label">Ablageort</span>
         ${binBadge(item)}
-        <span class="muted">${item.bin ? esc([item.bin.name, item.bin.location].filter(Boolean).join(' · ')) : 'noch nicht eingelagert'}</span>
+        <span class="detail-place-name">${item.bin ? esc([item.bin.name, item.bin.location].filter(Boolean).join(' · ')) : 'noch nicht eingelagert'}</span>
       </div>
+      ${gallery}
       ${item.quantity > 1 ? `<p><span class="badge qty">${item.quantity}× vorhanden</span></p>` : ''}
       ${item.description ? `<p class="detail-desc">${esc(item.description)}</p>` : ''}
       <dl class="kv">
@@ -1733,11 +1770,11 @@ function renderItemDetail(item) {
         <button type="button" class="primary" id="detail-store">Einlagern</button>
         <button type="button" class="small ghost" id="detail-pick">Andere Kiste</button>
       </div>`}
-      <div class="row" style="margin-top:6px">
-        <a class="small ghost" href="${googleUrl(`${item.name} ${item.brand ?? ''}`)}" target="_blank" rel="noopener">🔎 Google</a>
-        <button type="button" class="${item.bin_id ? 'primary' : 'small ghost'}" id="detail-edit">✎ Bearbeiten</button>
-        <button type="button" class="small ghost" id="detail-move">Umräumen</button>
-        <button type="button" class="small danger" id="detail-delete">Entfernen</button>
+      <div class="detail-actions">
+        <button type="button" class="danger" id="detail-delete">🗑 Entfernen</button>
+        <button type="button" class="ghost" id="detail-move">↔ Umräumen</button>
+        <button type="button" class="${item.bin_id ? 'primary' : 'ghost'}" id="detail-edit">✎ Bearbeiten</button>
+        <a class="ghost" href="${googleUrl(`${item.name} ${item.brand ?? ''}`)}" target="_blank" rel="noopener">🔎 Google</a>
       </div>`,
     onOk: async () => {},
   });
@@ -1943,7 +1980,10 @@ function renderItemEditor(item) {
       </div>
       <div class="field"><label>Beschreibung</label><textarea name="description" placeholder="Was ist das, wofür nutzt du es?">${esc(item.description ?? '')}</textarea></div>
       <div class="grid-2">
-        <div class="field"><label>Kategorie</label><input name="category" value="${esc(item.category ?? '')}" placeholder="z. B. Küche"></div>
+        <div class="field" style="grid-column: 1 / -1">
+          <label>Kategorien</label>
+          ${categoryPickerHtml(item.categories ?? (item.category ? [item.category] : []), 'editor-categories')}
+        </div>
         <div class="field"><label>Marke</label><input name="brand" value="${esc(item.brand ?? '')}"></div>
       </div>
       <div class="field">
@@ -2031,7 +2071,7 @@ function renderItemEditor(item) {
       const body = {
         name: fd.get('name'),
         description: fd.get('description'),
-        category: fd.get('category'),
+        categories: selectedCategories($('#editor-categories')),
         brand: fd.get('brand'),
         shape: fd.get('shape'),
         weight_g: fd.get('weight_g') === '' ? null : num(fd.get('weight_g')),
@@ -2247,8 +2287,9 @@ async function moveItemDialog(itemId) {
 
 async function loadCategories() {
   try {
-    const { categories } = await api('/api/categories');
+    const { categories, taxonomy } = await api('/api/categories');
     state.categories = categories ?? [];
+    state.taxonomy = taxonomy ?? [];
   } catch {
     state.categories = [];
   }

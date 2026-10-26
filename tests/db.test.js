@@ -409,7 +409,7 @@ test('Migration: alte Datenbank bekommt die neuen Spalten', async () => {
   const binCols = db.prepare('PRAGMA table_info(bins)').all().map((r) => r.name);
   const itemCols = db.prepare('PRAGMA table_info(items)').all().map((r) => r.name);
   assert.ok(binCols.includes('full_marked_at'));
-  for (const col of ['purchase_date', 'purchase_price_cents', 'invoice_path', 'invoice_name', 'invoice_link', 'quantity']) {
+  for (const col of ['purchase_date', 'purchase_price_cents', 'invoice_path', 'invoice_name', 'invoice_link', 'quantity', 'categories']) {
     assert.ok(itemCols.includes(col), `items.${col} fehlt`);
   }
   // und die neuen Felder funktionieren auf der migrierten DB
@@ -502,4 +502,51 @@ test('searchItems: nach Kategorien filtern (einzeln und kombiniert)', () => {
   // Groß-/Kleinschreibung egal
   assert.equal(searchItems(db, '', { categories: ['werkzeug'] }).length, 2);
   db.close();
+});
+
+test('Kategorien: mehrere pro Artikel, Suche und Migration', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'storder-cat-'));
+  const { db } = openDatabase(dir);
+  const bin = createBin(db, { code: 'A1', dims_cm: dims(80, 60, 60) });
+
+  const item = createItem(db, {
+    bin_id: bin.id,
+    name: 'USB-Hub',
+    categories: ['Elektronik', 'USB & Kabel', 'Computer & Zubehör'],
+    dims_cm: dims(10, 5, 2),
+  });
+  assert.deepEqual(item.categories, ['Elektronik', 'USB & Kabel', 'Computer & Zubehör']);
+  assert.equal(item.category, 'Elektronik');
+
+  // freie/aliasierte Eingabe wird auf die Taxonomie abgebildet
+  const alias = createItem(db, { bin_id: bin.id, name: 'NAS', category: 'Netzwerkspeicher (NAS)', dims_cm: dims(20, 20, 20) });
+  assert.deepEqual(alias.categories, ['Netzwerk']);
+
+  // Update ersetzt die Liste
+  const updated = updateItem(db, item.id, { categories: ['Elektronik', 'Netzwerk'] });
+  assert.deepEqual(updated.categories, ['Elektronik', 'Netzwerk']);
+
+  // Suche über eine der Kategorien
+  assert.equal(searchItems(db, '', { categories: ['Netzwerk'] }).length, 2);
+  assert.equal(searchItems(db, '', { categories: ['USB & Kabel'] }).length, 0);
+  assert.equal(searchItems(db, 'usb-hub').length, 1);
+  db.close();
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('Migration: alte Kategorie wird auf die Taxonomie abgebildet', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'storder-mig-'));
+  const { db } = openDatabase(dir);
+  const bin = createBin(db, { code: 'A1', dims_cm: dims(80, 60, 60) });
+  const item = createItem(db, { bin_id: bin.id, name: 'Kabel', dims_cm: dims(10, 5, 2) });
+  // Alt-Zustand simulieren: categories leer, category frei
+  db.prepare('UPDATE items SET category = ?, categories = ? WHERE id = ?').run('Elektronikzubehör', '', item.id);
+  db.close();
+
+  const reopened = openDatabase(dir);
+  const migrated = getItem(reopened.db, item.id);
+  assert.deepEqual(migrated.categories, ['Elektronik', 'USB & Kabel']);
+  assert.equal(migrated.category, 'Elektronik');
+  reopened.db.close();
+  fs.rmSync(dir, { recursive: true, force: true });
 });

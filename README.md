@@ -174,7 +174,8 @@ Umgebung gelesen.
    **Kiste voll** (Kiste ausschließen, anderen Platz suchen) und
    **Verwerfen** (Eingabe komplett verwerfen).
 10. **Artikel bearbeiten** – in Suche oder Kisteninhalt auf *Bearbeiten*:
-   Beschreibung, Kategorie, Marke, **Kaufdatum**, **Kaufpreis (optional)**,
+   Beschreibung, **Kategorien** (Mehrfachauswahl aus vorgegebenen Oberkategorien),
+   Marke, **Kaufdatum**, **Kaufpreis (optional)**,
    weitere **Fotos** (mehrere, jederzeit ergänz-, **dreh- und löschbar**) sowie die
    **Originalrechnung**:
    * **Fotos per Strg+V/Cmd+V** aus der Zwischenablage einfügen – z. B. ein
@@ -208,13 +209,13 @@ Umgebung gelesen.
 13. **Artikel ansehen & bearbeiten** – ein Tipp auf Karte oder Kachel öffnet die
    **Ansicht**: große Fotos (antippen = Vollbild), alle Daten, Rechnungslink.
    Erst das **Stift-Symbol ✎** wechselt in den Bearbeiten-Modus (Beschreibung,
-   Kategorie, Marke, **Maße/Gewicht/Form**, Stückzahl, Kaufdaten, Fotos,
+   Kategorien, Marke, **Maße/Gewicht/Form**, Stückzahl, Kaufdaten, Fotos,
    Rechnung). Geänderte Maße werden in der Kiste **neu platziert**; passt der
    Gegenstand nicht mehr, bleibt alles unverändert und es erscheint ein Hinweis.
-14. **Suche** – findet über Name, Beschreibung, Marke, Kategorie, Kisten-Code und
-   Ort (z. B. „A23“ oder „Werkstatt“). Über die **Kategorie-Chips** (mit Anzahl)
-   lässt sich der Bestand filtern, auch mehrere Kategorien gleichzeitig; „Alle"
-   hebt den Filter auf.
+14. **Suche** – findet über Name, Beschreibung, Marke, Kategorien, Kisten-Code
+   und Ort (z. B. „A23“ oder „Werkstatt“). Über die **Kategorie-Chips** (mit
+   Anzahl) lässt sich der Bestand filtern, auch mehrere Kategorien gleichzeitig;
+   „Alle" hebt den Filter auf.
 15. **Prüfen** – nach dem eingestellten Zeitraum erscheinen zufällige
    Gegenstände: *Behalte ich*, *Nutze ich nicht*, *Aussortieren* oder
    *Nicht gefunden*. Aussortierte wandern aus dem Bestand.
@@ -264,6 +265,21 @@ Ist Paperless nicht konfiguriert, bleibt der normale Datei-Upload verfügbar.
 Fehler (Token abgelehnt, nicht erreichbar, Zeitüberschreitung) werden im Dialog
 im Klartext angezeigt.
 
+## Kategorien
+
+Kategorien sind **vorgegeben** (Mehrfachauswahl, max. 5 pro Artikel) und decken
+Haushalt, Werkstatt und Elektronik ab:
+
+`Elektronik`, `Computer & Zubehör`, `Netzwerk`, `USB & Kabel`, `Smart Home`,
+`Messen & Prüfen`, `Werkzeug`, `Haushalt`, `Küche`, `Bad & Pflege`,
+`Büro & Papier`, `Kleidung`, `Reise`, `Sport & Freizeit`, `Garten`, `Fahrzeug`,
+`Basteln & Kleben`, `Verpackung & Versand`, `Spielzeug`, `Sonstiges`.
+
+Ein Artikel kann mehrere Kategorien haben (z. B. `Elektronik` + `USB & Kabel` +
+`Computer & Zubehör`). Bestehende freie Kategorie-Texte werden beim Start
+automatisch auf diese Liste abgebildet (z. B. „Elektronikzubehör" →
+`Elektronik` + `USB & Kabel`), unbekannte auf `Sonstiges`.
+
 ## Wie gerechnet wird
 
 * **Artikelzeilen** zeigen Maße, Kategorie/Marke und Datum – Liter stehen nur
@@ -308,7 +324,7 @@ betreiben (oder hinter VPN/Reverse-Proxy mit Auth).
 | `GET/POST /api/items`, `PUT/DELETE /api/items/:id` | Gegenstände verwalten (`PUT` mit `dims_cm` platziert neu) |
 | `GET /api/items?bin_id=…` | Inhalt einer Kiste |
 | `POST /api/items/:id/move` | umräumen (`bin_id` oder `"auto"`) |
-| `GET /api/categories` | Kategorien mit Anzahl (für die Filter-Chips) |
+| `GET /api/categories` | vorgegebene Kategorien (`taxonomy`) + verwendete mit Anzahl |
 | `GET /api/search?q=…&categories=A,B` | Freitextsuche, optional nach Kategorien gefiltert |
 | `POST /api/analyze` | `{ image: dataURL, hint? }` → Produktdaten + Foto |
 | `POST /api/suggest` | `{ dims_cm, weight_g?, category?, name?, quantity?, volume_liters?, prefer_box_id?, exclude_box_ids? }` → Ablageort (inkl. `category_match`) |
