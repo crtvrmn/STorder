@@ -167,3 +167,44 @@ test('normalizeReview: leere/fehlende Daten', () => {
   assert.deepEqual(normalizeReview({}), []);
   assert.deepEqual(normalizeReview({ data: { issues: [] } }), []);
 });
+
+test('Schema-Fallback: Provider-400 -> Retry mit json_object', async () => {
+  const config = loadConfig({ LLM_API_KEY: 'k', LLM_BASE_URL: 'https://openrouter.ai/api/v1' });
+  const formats = [];
+  let calls = 0;
+  const llm = createLlmClient(config, {
+    fetchImpl: async (url, init) => {
+      calls++;
+      formats.push(JSON.parse(init.body).response_format?.type);
+      if (calls === 1) {
+        return new Response(JSON.stringify({
+          error: { message: 'Provider returned error', code: 400, metadata: { raw: 'json_schema is unsupported', provider_name: 'Google' } },
+        }), { status: 400, headers: { 'content-type': 'application/json' } });
+      }
+      return new Response(JSON.stringify({
+        id: 'x', object: 'chat.completion', created: 1, model: 'm',
+        choices: [{ index: 0, message: { role: 'assistant', content: JSON.stringify({ issues: [{ item_id: 1, type: 'weight', message: 'zu schwer', suggested: { weight_g: 120 } }] }) }, finish_reason: 'stop' }],
+        usage: {},
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    },
+  });
+
+  const issues = await llm.reviewInventory({ items: [{ id: 1, name: 'Kabel' }] });
+  assert.equal(calls, 2);
+  assert.deepEqual(formats, ['json_schema', 'json_object']);
+  assert.equal(issues.length, 1);
+  assert.equal(issues[0].suggested.weight_g, 120);
+});
+
+test('Provider-400 ohne Schema-Hinweis bleibt Fehler (mit Details)', async () => {
+  const config = loadConfig({ LLM_API_KEY: 'k', LLM_BASE_URL: 'https://openrouter.ai/api/v1' });
+  const llm = createLlmClient(config, {
+    fetchImpl: async () => new Response(JSON.stringify({
+      error: { message: 'Provider returned error', code: 400, metadata: { raw: 'max context length exceeded' } },
+    }), { status: 400, headers: { 'content-type': 'application/json' } }),
+  });
+  await assert.rejects(
+    () => llm.reviewInventory({ items: [{ id: 1, name: 'Kabel' }] }),
+    (err) => err.code === 'LLM_ERROR' && /max context length/.test(err.message) && /Provider returned error/.test(err.message),
+  );
+});
