@@ -625,7 +625,21 @@ export function createApp({ config, db, llm, paperless }) {
     const query = String(req.query.q ?? '');
     const status = typeof req.query.status === 'string' ? req.query.status : 'stored';
     const limit = Math.min(Math.max(Number(req.query.limit) || 60, 1), 200);
-    res.json({ query, items: searchItems(db, query, { limit, status }) });
+    // Kategorien: ?category=A&category=B oder ?categories=A,B
+    const raw = [
+      ...(Array.isArray(req.query.category) ? req.query.category : (req.query.category ? [req.query.category] : [])),
+      ...(typeof req.query.categories === 'string' ? req.query.categories.split(',') : []),
+    ];
+    const categories = [...new Set(raw.map((c) => String(c).trim()).filter(Boolean))].slice(0, 20);
+    res.json({ query, categories, items: searchItems(db, query, { limit, status, categories }) });
+  });
+
+  /** Kategorien mit Anzahl (für die Filter-Chips in der Suche). */
+  app.get('/api/categories', (req, res) => {
+    const rows = db.prepare(`SELECT MIN(category) AS name, COUNT(*) AS count
+      FROM items WHERE status = 'stored' AND TRIM(category) <> ''
+      GROUP BY LOWER(TRIM(category)) ORDER BY count DESC, name`).all();
+    res.json({ categories: rows });
   });
 
   /* ------------------------- Foto + KI-Analyse ------------------------- */

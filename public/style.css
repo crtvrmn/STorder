@@ -284,9 +284,41 @@ button { font: inherit; cursor: pointer; }
 /* Rasteransicht (3 Spalten auf dem Handy) */
 .grid-items {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  grid-template-columns: repeat(3, 1fr);
   gap: 8px;
 }
+.grid-items.grid-cols-2 {
+  grid-template-columns: repeat(2, 1fr);
+}
+.grid-cols-2 .grid-name { font-size: 0.86rem; min-height: 2.4em; }
+.grid-cols-2 .grid-photo { aspect-ratio: 1; }
+
+/* Kategorie-Filter */
+.chips {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 2px 2px 10px;
+  scrollbar-width: none;
+}
+.chips::-webkit-scrollbar { display: none; }
+.chip {
+  flex: 0 0 auto;
+  padding: 6px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--bg-soft);
+  color: var(--muted);
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+.chip.active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+  font-weight: 600;
+}
+.chip-count { opacity: 0.7; font-size: 0.72rem; margin-left: 2px; }
 .grid-item {
   display: grid;
   gap: 4px;

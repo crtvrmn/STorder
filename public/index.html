@@ -73,6 +73,7 @@
       <div class="view-head">
         <h2>Kisten</h2>
         <div class="row shrink">
+          <button class="small ghost" id="btn-grid-cols-bins" type="button" title="Kacheln pro Reihe" hidden>3/Reihe</button>
           <button class="small ghost view-toggle" data-view-mode type="button">Raster</button>
           <button class="small primary" data-action="new-bin">+ Kiste</button>
         </div>
@@ -85,12 +86,16 @@
     <section id="view-search" class="view">
       <div class="view-head">
         <h2>Suche</h2>
-        <button class="small ghost view-toggle" data-view-mode type="button">Raster</button>
+        <div class="row shrink">
+          <button class="small ghost" id="btn-grid-cols" type="button" title="Kacheln pro Reihe" hidden>3/Reihe</button>
+          <button class="small ghost view-toggle" data-view-mode type="button">Raster</button>
+        </div>
       </div>
       <div class="searchbar">
         <input id="search-input" type="search" placeholder="Was suchst du?" autocomplete="off" enterkeyhint="search">
         <button id="btn-search" class="primary small">Suchen</button>
       </div>
+      <div id="category-chips" class="chips" hidden></div>
       <div id="search-results" class="list"></div>
     </section>
 

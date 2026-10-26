@@ -1074,3 +1074,30 @@ test('Posteingang: Artikel ohne Kiste kommen nicht in die Prüf-Erinnerung', asy
     assert.equal(recall.json.items.length, 0);
   } finally { await t.close(); }
 });
+
+test('Suche: Kategorien-Liste und Filter', async () => {
+  const t = await boot();
+  try {
+    const bin = (await t.call('POST', '/api/bins', { code: 'A1', dims_cm: { length_cm: 100, width_cm: 60, height_cm: 60 } })).json.bin;
+    await t.call('POST', '/api/items', { name: 'Bohrer', category: 'Werkzeug', bin_id: bin.id, dims_cm: { length_cm: 20, width_cm: 10, height_cm: 10 } });
+    await t.call('POST', '/api/items', { name: 'Schraube', category: 'Werkzeug', bin_id: bin.id, dims_cm: { length_cm: 5, width_cm: 5, height_cm: 5 } });
+    await t.call('POST', '/api/items', { name: 'Toaster', category: 'Küche', bin_id: bin.id, dims_cm: { length_cm: 30, width_cm: 20, height_cm: 20 } });
+    await t.call('POST', '/api/items', { name: 'Kabel', bin_id: bin.id, dims_cm: { length_cm: 10, width_cm: 10, height_cm: 5 } });
+
+    const cats = await t.call('GET', '/api/categories');
+    assert.equal(cats.status, 200);
+    const byName = Object.fromEntries(cats.json.categories.map((c) => [c.name, c.count]));
+    assert.equal(byName.Werkzeug, 2);
+    assert.equal(byName['Küche'], 1);
+    assert.equal(Object.keys(byName).length, 2); // leere Kategorie zählt nicht
+
+    const filtered = await t.call('GET', '/api/search?categories=Werkzeug');
+    assert.deepEqual(filtered.json.items.map((i) => i.name).sort(), ['Bohrer', 'Schraube']);
+
+    const two = await t.call('GET', '/api/search?category=Werkzeug&category=K%C3%BCche');
+    assert.equal(two.json.items.length, 3);
+
+    const combined = await t.call('GET', '/api/search?q=toaster&categories=Werkzeug');
+    assert.equal(combined.json.items.length, 0);
+  } finally { await t.close(); }
+});

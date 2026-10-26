@@ -173,9 +173,10 @@ Umgebung gelesen.
    **Kiste entfernen** fragt, ob der Inhalt erhalten bleiben soll (Gegenstände
    sind danach „ohne Kiste") oder **mit der Kiste gelöscht** wird (inkl. Fotos
    und Rechnungen).
-11. **Ansicht umschalten** – in Kisten-Inhalt und Suche wechselt der Knopf
-   zwischen **Liste** und **Raster** (3 Spalten auf dem Handy, mehr auf großen
-   Bildschirmen).
+11. **Ansicht umschalten** – **Raster ist Standard** (3 Kacheln pro Reihe); der
+   Knopf **„3/Reihe"** schaltet auf **2 pro Reihe** um (wird gemerkt), der
+   Knopf **„Liste"** auf die Listenansicht. Gilt für Kisten-Inhalt, Suche und
+   Posteingang.
 12. **Artikel ansehen & bearbeiten** – ein Tipp auf Karte oder Kachel öffnet die
    **Ansicht**: große Fotos (antippen = Vollbild), alle Daten, Rechnungslink.
    Erst das **Stift-Symbol ✎** wechselt in den Bearbeiten-Modus (Beschreibung,
@@ -183,7 +184,9 @@ Umgebung gelesen.
    Rechnung). Geänderte Maße werden in der Kiste **neu platziert**; passt der
    Gegenstand nicht mehr, bleibt alles unverändert und es erscheint ein Hinweis.
 13. **Suche** – findet über Name, Beschreibung, Marke, Kategorie, Kisten-Code und
-   Ort (z. B. „A23“ oder „Werkstatt“).
+   Ort (z. B. „A23“ oder „Werkstatt“). Über die **Kategorie-Chips** (mit Anzahl)
+   lässt sich der Bestand filtern, auch mehrere Kategorien gleichzeitig; „Alle"
+   hebt den Filter auf.
 14. **Prüfen** – nach dem eingestellten Zeitraum erscheinen zufällige
    Gegenstände: *Behalte ich*, *Nutze ich nicht*, *Aussortieren* oder
    *Nicht gefunden*. Aussortierte wandern aus dem Bestand.
@@ -277,7 +280,8 @@ betreiben (oder hinter VPN/Reverse-Proxy mit Auth).
 | `GET/POST /api/items`, `PUT/DELETE /api/items/:id` | Gegenstände verwalten (`PUT` mit `dims_cm` platziert neu) |
 | `GET /api/items?bin_id=…` | Inhalt einer Kiste |
 | `POST /api/items/:id/move` | umräumen (`bin_id` oder `"auto"`) |
-| `GET /api/search?q=…` | Freitextsuche |
+| `GET /api/categories` | Kategorien mit Anzahl (für die Filter-Chips) |
+| `GET /api/search?q=…&categories=A,B` | Freitextsuche, optional nach Kategorien gefiltert |
 | `POST /api/analyze` | `{ image: dataURL, hint? }` → Produktdaten + Foto |
 | `POST /api/suggest` | `{ dims_cm, weight_g?, category?, name?, quantity?, volume_liters?, prefer_box_id?, exclude_box_ids? }` → Ablageort (inkl. `category_match`) |
 | `GET /api/recall` | fällige Gegenstände zur Prüfung |

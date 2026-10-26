@@ -19,7 +19,11 @@ const state = {
   analysisAbort: null,  // laufende Analyse abbrechen können
   skipAnalysis: false,  // "KI überspringen": nur manuelle Eingabe
   similar: [],          // ähnliche, bereits eingelagerte Artikel
-  viewMode: (localStorage.getItem('storder_view') === 'grid' ? 'grid' : 'list'),
+  // Raster ist Standard; nur eine bewusste Umschaltung auf Liste wird gemerkt.
+  viewMode: (localStorage.getItem('storder_view_v2') === 'list' ? 'list' : 'grid'),
+  gridCols: (Number(localStorage.getItem('storder_cols')) === 2 ? 2 : 3),
+  categoryFilter: new Set(),
+  categories: [],
 };
 
 /* ------------------------------- Helfer --------------------------------- */
@@ -94,7 +98,8 @@ function showView(name, { push = true } = {}) {
   if (name === 'recall') loadRecall();
   if (name === 'search') {
     $('#search-input').focus();
-    // Ohne Suchbegriff zeigt die Liste den ganzen Katalog (neueste zuerst).
+    // Kategorien/Zähler frisch laden, dann den Katalog anzeigen.
+    loadCategories();
     runSearch();
   }
   window.scrollTo({ top: 0 });
@@ -1351,7 +1356,7 @@ function itemGridCard(item) {
 /** Rendert Artikel als Liste oder Raster (je nach Ansicht). */
 function renderItemCollection(items, host, { compact = false } = {}) {
   if (state.viewMode === 'grid') {
-    host.className = 'grid-items';
+    host.className = `grid-items${state.gridCols === 2 ? ' grid-cols-2' : ''}`;
     host.innerHTML = items.map(itemGridCard).join('');
   } else {
     host.className = 'list';
@@ -1652,6 +1657,7 @@ async function openItemEditor(itemId) {
 function refreshItemViews() {
   loadBins();
   runSearch();
+  loadCategories();
   updateInboxBadge();
   if (document.querySelector('#view-inbox').classList.contains('active')) loadInbox();
 }
@@ -1963,14 +1969,56 @@ async function moveItemDialog(itemId) {
 
 /* --------------------------------- Suche -------------------------------- */
 
+/* --------------------------- Kategorie-Filter --------------------------- */
+
+async function loadCategories() {
+  try {
+    const { categories } = await api('/api/categories');
+    state.categories = categories ?? [];
+  } catch {
+    state.categories = [];
+  }
+  renderCategoryChips();
+}
+
+function renderCategoryChips() {
+  const host = $('#category-chips');
+  if (!host) return;
+  const cats = state.categories ?? [];
+  if (!cats.length) {
+    host.hidden = true;
+    host.innerHTML = '';
+    return;
+  }
+  host.hidden = false;
+  const active = state.categoryFilter;
+  host.innerHTML = [
+    `<button type="button" class="chip${active.size ? '' : ' active'}" data-cat="">Alle</button>`,
+    ...cats.map((c) => `<button type="button" class="chip${active.has(c.name) ? ' active' : ''}" data-cat="${esc(c.name)}">${esc(c.name)} <span class="chip-count">${c.count}</span></button>`),
+  ].join('');
+  $$('#category-chips [data-cat]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const name = btn.dataset.cat;
+      if (!name) state.categoryFilter.clear();
+      else if (state.categoryFilter.has(name)) state.categoryFilter.delete(name);
+      else state.categoryFilter.add(name);
+      renderCategoryChips();
+      runSearch();
+    });
+  });
+}
+
 async function runSearch() {
   const query = $('#search-input').value.trim();
   const host = $('#search-results');
   host.innerHTML = '<p class="status">Suche…</p>';
   try {
-    const { items } = await api(`/api/search?q=${encodeURIComponent(query)}`);
+    const params = new URLSearchParams();
+    if (query) params.set('q', query);
+    if (state.categoryFilter.size) params.set('categories', [...state.categoryFilter].join(','));
+    const { items } = await api(`/api/search?${params.toString()}`);
     if (!items.length) {
-      host.innerHTML = `<p class="muted">${query ? 'Nichts gefunden.' : 'Noch nichts eingelagert.'}</p>`;
+      host.innerHTML = `<p class="muted">${query || state.categoryFilter.size ? 'Nichts gefunden.' : 'Noch nichts eingelagert.'}</p>`;
       return;
     }
     renderItemCollection(items, host);
@@ -2054,6 +2102,7 @@ $('[data-action="reload-recall"]').addEventListener('click', loadRecall);
 /* --------------------------------- Start -------------------------------- */
 
 loadPaperlessStatus();
+loadCategories();
 updateInboxBadge();
 
 /* --------------------------- Listen-/Rasteransicht ---------------------- */
@@ -2062,17 +2111,35 @@ function updateViewToggle() {
   $$('[data-view-mode]').forEach((btn) => {
     btn.textContent = state.viewMode === 'grid' ? 'Liste' : 'Raster';
   });
+  // Dichte nur im Raster anbieten
+  $$('#btn-grid-cols, #btn-grid-cols-bins').forEach((btn) => {
+    btn.hidden = state.viewMode !== 'grid';
+    btn.textContent = `${state.gridCols}/Reihe`;
+  });
+}
+
+function refreshVisibleLists() {
+  loadBins();
+  if (document.querySelector('#view-search').classList.contains('active')) runSearch();
+  if (document.querySelector('#view-inbox').classList.contains('active')) loadInbox();
 }
 
 function toggleViewMode() {
   state.viewMode = state.viewMode === 'grid' ? 'list' : 'grid';
-  localStorage.setItem('storder_view', state.viewMode);
+  localStorage.setItem('storder_view_v2', state.viewMode);
   updateViewToggle();
-  loadBins();
-  if (document.querySelector('#view-search').classList.contains('active')) runSearch();
+  refreshVisibleLists();
+}
+
+function toggleGridCols() {
+  state.gridCols = state.gridCols === 3 ? 2 : 3;
+  localStorage.setItem('storder_cols', String(state.gridCols));
+  updateViewToggle();
+  refreshVisibleLists();
 }
 
 $$('[data-view-mode]').forEach((btn) => btn.addEventListener('click', toggleViewMode));
+$$('#btn-grid-cols, #btn-grid-cols-bins').forEach((btn) => btn.addEventListener('click', toggleGridCols));
 updateViewToggle();
 
 const initialView = location.hash.slice(1);

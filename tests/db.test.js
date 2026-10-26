@@ -483,3 +483,23 @@ test('Kiste löschen: Inhalt behalten oder mitlöschen', () => {
   assert.deepEqual(deleteBinWithItems(db, 9999), { deleted: false, items: [] });
   db.close();
 });
+
+test('searchItems: nach Kategorien filtern (einzeln und kombiniert)', () => {
+  const { db } = freshDb();
+  const bin = createBin(db, { code: 'A1', dims_cm: dims(80, 60, 60) });
+  createItem(db, { bin_id: bin.id, name: 'Bohrer', category: 'Werkzeug', dims_cm: dims(20, 10, 10) });
+  createItem(db, { bin_id: bin.id, name: 'Schraube', category: 'Werkzeug', dims_cm: dims(5, 5, 5) });
+  createItem(db, { bin_id: bin.id, name: 'Toaster', category: 'Küche', dims_cm: dims(30, 20, 20) });
+  createItem(db, { bin_id: bin.id, name: 'Kabel', category: '', dims_cm: dims(10, 10, 5) });
+
+  assert.equal(searchItems(db, '', { categories: ['Werkzeug'] }).length, 2);
+  assert.equal(searchItems(db, '', { categories: ['Küche'] }).length, 1);
+  assert.equal(searchItems(db, '', { categories: ['Werkzeug', 'Küche'] }).length, 3);
+  assert.equal(searchItems(db, '', { categories: ['gibtsnicht'] }).length, 0);
+  // Kategorie und Suchwort kombiniert
+  assert.equal(searchItems(db, 'bohrer', { categories: ['Werkzeug'] }).length, 1);
+  assert.equal(searchItems(db, 'bohrer', { categories: ['Küche'] }).length, 0);
+  // Groß-/Kleinschreibung egal
+  assert.equal(searchItems(db, '', { categories: ['werkzeug'] }).length, 2);
+  db.close();
+});

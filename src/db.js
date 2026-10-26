@@ -764,11 +764,17 @@ const BIN_SEARCH_FIELDS = ['b.code', 'b.name', 'b.location', 'b.shelf'];
  * Freitextsuche über Gegenstand und Kiste. Mehrere Wörter werden UND-verknüpft.
  * Ein Suchwort muss in einem der Gegenstands- ODER Kistenfelder vorkommen.
  */
-export function searchItems(db, query, { limit = 60, status = 'stored' } = {}) {
+export function searchItems(db, query, { limit = 60, status = 'stored', categories = [] } = {}) {
   const terms = String(query ?? '').trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const cats = (Array.isArray(categories) ? categories : [categories])
+    .map((c) => String(c ?? '').trim().toLowerCase())
+    .filter(Boolean);
   const base = `SELECT i.* FROM items i LEFT JOIN bins b ON b.id = i.bin_id WHERE i.status = ?`;
+  const catSql = cats.length
+    ? ` AND LOWER(TRIM(i.category)) IN (${cats.map(() => '?').join(',')})`
+    : '';
   if (!terms.length) {
-    const rows = db.prepare(`${base} ORDER BY i.created_at DESC LIMIT ?`).all(status, limit);
+    const rows = db.prepare(`${base}${catSql} ORDER BY i.created_at DESC LIMIT ?`).all(status, ...cats, limit);
     const bins = binMap(db, rows.map((r) => r.bin_id));
     return rows.map((r) => rowToItem(r, bins.get(r.bin_id) ?? null));
   }
@@ -780,8 +786,8 @@ export function searchItems(db, query, { limit = 60, status = 'stored' } = {}) {
     where.push(`(${fields.map((f) => `LOWER(${f}) LIKE ?`).join(' OR ')})`);
     params.push(...fields.map(() => like));
   }
-  const sql = `${base} AND ${where.join(' AND ')} ORDER BY i.created_at DESC LIMIT ?`;
-  const rows = db.prepare(sql).all(status, ...params, limit);
+  const sql = `${base}${catSql} AND ${where.join(' AND ')} ORDER BY i.created_at DESC LIMIT ?`;
+  const rows = db.prepare(sql).all(status, ...cats, ...params, limit);
   const bins = binMap(db, rows.map((r) => r.bin_id));
   return rows.map((r) => rowToItem(r, bins.get(r.bin_id) ?? null));
 }
