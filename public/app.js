@@ -27,6 +27,7 @@ const state = {
   hkSuggestions: [],   // Umlager-Vorschläge (deterministisch)
   hkIssues: [],        // KI-Prüfung (Maße/Gewicht/Beschreibung)
   hkChecked: 0,
+  editorItemId: null,
 };
 
 /* ------------------------------- Helfer --------------------------------- */
@@ -217,6 +218,7 @@ function openChoiceSheet({ title, body = '', choices, cancelLabel = 'Abbrechen' 
 function closeDialog() {
   const dialog = $('#dialog');
   dialogOkHandler = null;
+  state.editorItemId = null;
   if (dialog.open) dialog.close();
 }
 
@@ -346,15 +348,20 @@ $('#photo-input').addEventListener('change', async (event) => {
 
 // Strg+V / Cmd+V: Bild aus der Zwischenablage übernehmen
 document.addEventListener('paste', async (event) => {
-  if ($('#dialog')?.open) return; // im Editor nicht die Erfassung überschreiben
-  const items = [...(event.clipboardData?.items ?? [])];
-  const imageItem = items.find((it) => String(it.type ?? '').startsWith('image/'));
-  if (!imageItem) return; // Text-Einfügen normal zulassen
-  const file = imageItem.getAsFile?.();
-  if (!file) return;
+  const imageItems = [...(event.clipboardData?.items ?? [])]
+    .filter((it) => String(it.type ?? '').startsWith('image/'));
+  if (!imageItems.length) return; // Text-Einfügen normal zulassen
+  const files = imageItems.map((it) => it.getAsFile?.()).filter(Boolean);
+  if (!files.length) return;
   event.preventDefault();
+
+  // Editor offen: Fotos an den bearbeiteten Artikel anhängen.
+  if ($('#dialog')?.open) {
+    if (state.editorItemId) await addPhotosToEditor(files);
+    return;
+  }
   if (!document.querySelector('#view-capture').classList.contains('active')) showView('capture');
-  await acceptPhoto(file, { fromPaste: true });
+  await acceptPhoto(files[0], { fromPaste: true });
 });
 
 // "Auf Google suchen" (Erfassungsformular + Editor)
@@ -1823,19 +1830,179 @@ function refreshItemViews() {
   if (document.querySelector('#view-inbox').classList.contains('active')) loadInbox();
 }
 
-function renderItemEditor(item) {
-  const price = item.purchase_price != null
-    ? String(item.purchase_price).replace('.', ',')
-    : '';
-  const photos = (item.photos ?? []).map((p) => `
-    <span class="photo-tile">
+/** Ein Foto-Kachel im Editor (auch zum Nachladen nach Paste/Import). */
+function editorPhotoTile(p, item) {
+  return `
+    <span class="photo-tile" data-photo-path="${esc(p)}">
       <img src="${esc(photoSrc(p, item))}" alt="">
       <span class="photo-rotate">
         <button type="button" data-rotate-photo="${esc(p)}" data-direction="left" title="90° nach links drehen" aria-label="90 Grad nach links drehen">↺</button>
         <button type="button" data-rotate-photo="${esc(p)}" data-direction="right" title="90° nach rechts drehen" aria-label="90 Grad nach rechts drehen">↻</button>
       </span>
       <button type="button" class="photo-remove" data-remove-photo="${esc(p)}" title="Foto entfernen" aria-label="Foto entfernen">✕</button>
-    </span>`).join('');
+    </span>`;
+}
+
+/** Neue Fotos in die offene Editor-Maske einsetzen (ohne Formularverlust). */
+function appendEditorPhotos(updated) {
+  const grid = $('#dialog-body .photo-grid');
+  if (!grid) return;
+  const have = new Set([...grid.querySelectorAll('[data-photo-path]')].map((el) => el.dataset.photoPath));
+  const missing = (updated.photos ?? []).filter((p) => !have.has(p));
+  if (!missing.length) return;
+  grid.querySelector('p.muted')?.remove();
+  grid.insertAdjacentHTML('beforeend', missing.map((p) => editorPhotoTile(p, updated)).join(''));
+  const count = $('#editor-photo-count');
+  if (count) count.textContent = `Fotos (${updated.photos.length})`;
+  bindEditorPhotoButtons();
+}
+
+/** Buttons an (auch nachträglich eingesetzten) Foto-Kacheln binden. */
+function bindEditorPhotoButtons() {
+  $$('#dialog-body [data-remove-photo]').forEach((btn) => {
+    if (btn.dataset.bound) return;
+    btn.dataset.bound = '1';
+    btn.addEventListener('click', async () => {
+      const id = state.editorItemId;
+      if (!id) return;
+      const name = btn.dataset.removePhoto.split('/').pop();
+      try {
+        const { item: updated } = await api(`/api/items/${id}/photos/${name}`, { method: 'DELETE' });
+        renderItemEditor(updated);
+        refreshItemViews();
+      } catch (err) { toast(err.message, 'error'); }
+    });
+  });
+  $$('#dialog-body [data-rotate-photo]').forEach((btn) => {
+    if (btn.dataset.boundRotate) return;
+    btn.dataset.boundRotate = '1';
+    btn.addEventListener('click', async () => {
+      const id = state.editorItemId;
+      if (!id) return;
+      btn.disabled = true;
+      try {
+        const { item: updated } = await api(`/api/items/${id}/photos/${btn.dataset.rotatePhoto.split('/').pop()}/rotate`, {
+          method: 'POST',
+          body: { direction: btn.dataset.direction },
+        });
+        renderItemEditor(updated);
+        refreshItemViews();
+      } catch (err) {
+        toast(err.message, 'error');
+        btn.disabled = false;
+      }
+    });
+  });
+}
+
+async function addPhotosToEditor(files) {
+  const id = state.editorItemId;
+  if (!id) return;
+  const picked = [...files].slice(0, 8);
+  if (!picked.length) return;
+  try {
+    const images = [];
+    for (const file of picked) images.push(await fileToDataUrl(file));
+    const { item: updated } = await api(`/api/items/${id}/photos`, { method: 'POST', body: { images } });
+    appendEditorPhotos(updated);
+    toast(`${images.length} Foto(s) hinzugefügt`, 'ok');
+    refreshItemViews();
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+function setupEditorImageSearch(item) {
+  const panel = $('#editor-image-panel');
+  const input = $('#editor-image-q');
+  const status = $('#editor-image-status');
+  const results = $('#editor-image-results');
+  const importBtn = $('#editor-image-import');
+  const selected = new Map();
+
+  const setStatus = (text, error = false) => {
+    status.hidden = !text;
+    status.className = error ? 'status error' : 'status';
+    status.textContent = text;
+  };
+  const updateImport = () => {
+    importBtn.disabled = selected.size === 0;
+    importBtn.textContent = selected.size ? `Auswahl importieren (${selected.size})` : 'Auswahl importieren';
+  };
+
+  async function doSearch() {
+    const q = input.value.trim();
+    if (q.length < 2) { toast('Bitte einen Suchbegriff eingeben.', 'error'); return; }
+    setStatus('Suche Bilder…');
+    results.innerHTML = '';
+    selected.clear();
+    updateImport();
+    try {
+      const data = await api(`/api/images/search?q=${encodeURIComponent(q)}`);
+      const list = data.results ?? [];
+      if (!list.length) { setStatus('Keine Bilder gefunden.'); return; }
+      setStatus(`${list.length} Bilder – antippen zum Auswählen`);
+      results.innerHTML = list.map((r, i) => `
+        <button type="button" class="image-option" data-image-index="${i}" title="${esc(r.title)}${r.creator ? ` – ${esc(r.creator)}` : ''}${r.license ? ` (${esc(r.license)})` : ''}">
+          <img src="${esc(r.thumbnail || r.url)}" alt="" loading="lazy" referrerpolicy="no-referrer">
+          <span class="image-check">✓</span>
+        </button>`).join('');
+      $$('#editor-image-results .image-option').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const r = list[Number(btn.dataset.imageIndex)];
+          if (selected.has(r.url)) {
+            selected.delete(r.url);
+            btn.classList.remove('selected');
+          } else {
+            selected.set(r.url, r);
+            btn.classList.add('selected');
+          }
+          updateImport();
+        });
+      });
+    } catch (err) {
+      setStatus(err.message, true);
+    }
+  }
+
+  $('#editor-image-search').addEventListener('click', () => {
+    panel.hidden = !panel.hidden;
+    if (!panel.hidden) {
+      if (!input.value.trim()) input.value = [item.name, item.brand].filter(Boolean).join(' ');
+      doSearch();
+    }
+  });
+  $('#editor-image-go').addEventListener('click', doSearch);
+  input.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') { event.preventDefault(); doSearch(); }
+  });
+  $('#editor-image-close').addEventListener('click', () => { panel.hidden = true; });
+  importBtn.addEventListener('click', async () => {
+    if (!selected.size) return;
+    importBtn.disabled = true;
+    try {
+      const { item: updated, failed } = await api(`/api/items/${state.editorItemId}/photos/import`, {
+        method: 'POST',
+        body: { urls: [...selected.keys()] },
+      });
+      appendEditorPhotos(updated);
+      const ok = selected.size - (failed?.length ?? 0);
+      toast(`${ok} Bild(er) importiert${failed?.length ? `, ${failed.length} fehlgeschlagen` : ''}`, failed?.length ? 'error' : 'ok');
+      refreshItemViews();
+      panel.hidden = true;
+    } catch (err) {
+      toast(err.message, 'error');
+    } finally {
+      updateImport();
+    }
+  });
+  updateImport();
+}
+
+function renderItemEditor(item) {
+  const price = item.purchase_price != null
+    ? String(item.purchase_price).replace('.', ',')
+    : '';
+  state.editorItemId = item.id;
+  const photos = (item.photos ?? []).map((p) => editorPhotoTile(p, item)).join('');
 
   let chosenBin = null;
 
@@ -1892,12 +2059,29 @@ function renderItemEditor(item) {
       </div>
 
       <div class="field">
-        <label>Fotos (${item.photos?.length ?? 0})</label>
+        <label id="editor-photo-count">Fotos (${item.photos?.length ?? 0})</label>
         <div class="photo-grid">${photos || '<p class="muted">Noch keine Fotos.</p>'}</div>
-        <label class="upload-btn">
-          <input type="file" accept="image/*" multiple id="editor-add-photos">
-          <span>＋ Fotos hinzufügen</span>
-        </label>
+        <div class="row">
+          <label class="upload-btn shrink">
+            <input type="file" accept="image/*" multiple id="editor-add-photos">
+            <span>＋ Fotos</span>
+          </label>
+          <button type="button" class="small ghost shrink" id="editor-image-search">🔎 Bilder suchen</button>
+        </div>
+        <p class="muted">Tipp: Bilder aus der Zwischenablage mit <kbd>Strg</kbd>+<kbd>V</kbd> einfügen.</p>
+
+        <div id="editor-image-panel" class="image-panel" hidden>
+          <div class="searchbar">
+            <input id="editor-image-q" type="search" placeholder="Bildersuche, z. B. Produktname" enterkeyhint="search">
+            <button type="button" class="small primary" id="editor-image-go">Suchen</button>
+          </div>
+          <p class="muted" id="editor-image-status" hidden></p>
+          <div id="editor-image-results" class="image-results"></div>
+          <div class="row">
+            <button type="button" class="small primary" id="editor-image-import" disabled>Auswahl importieren</button>
+            <button type="button" class="small ghost" id="editor-image-close">Schließen</button>
+          </div>
+        </div>
       </div>
 
       <div class="field">
@@ -1969,49 +2153,11 @@ function renderItemEditor(item) {
   $('#editor-add-photos').addEventListener('change', async (event) => {
     const files = [...(event.target.files ?? [])];
     if (!files.length) return;
-    try {
-      const images = [];
-      for (const file of files) images.push(await fileToDataUrl(file, 1600));
-      const { item: updated } = await api(`/api/items/${item.id}/photos`, {
-        method: 'POST',
-        body: { images },
-      });
-      toast(`${images.length} Foto(s) hinzugefügt`, 'ok');
-      renderItemEditor(updated);
-      refreshItemViews();
-    } catch (err) { toast(err.message, 'error'); }
+    await addPhotosToEditor(files);
+    event.target.value = '';
   });
-
-  $$('#dialog-body [data-remove-photo]').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      const photoPath = btn.dataset.removePhoto;
-      const name = photoPath.split('/').pop();
-      try {
-        const { item: updated } = await api(`/api/items/${item.id}/photos/${name}`, { method: 'DELETE' });
-        renderItemEditor(updated);
-        refreshItemViews();
-      } catch (err) { toast(err.message, 'error'); }
-    });
-  });
-
-  $$('#dialog-body [data-rotate-photo]').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      const photoPath = btn.dataset.rotatePhoto;
-      const name = photoPath.split('/').pop();
-      btn.disabled = true;
-      try {
-        const { item: updated } = await api(`/api/items/${item.id}/photos/${name}/rotate`, {
-          method: 'POST',
-          body: { direction: btn.dataset.direction },
-        });
-        renderItemEditor(updated);
-        refreshItemViews();
-      } catch (err) {
-        toast(err.message, 'error');
-        btn.disabled = false;
-      }
-    });
-  });
+  bindEditorPhotoButtons();
+  setupEditorImageSearch(item);
 
   // --- Rechnung ---
   $('#editor-add-invoice').addEventListener('change', async (event) => {

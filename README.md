@@ -104,6 +104,9 @@ Alles über Umgebungsvariablen (siehe `.env.example`). Die wichtigsten:
 | `DATA_DIR` | `./data` (Docker: `/data`) | Datenbank + Fotos |
 | `PORT` / `HOST` | `8080` / `0.0.0.0` | HTTP-Port und Bind-Adresse |
 | `LLM_MAX_IMAGE_DIM` | `1000` | max. Bildkante in px (Speicherung als WebP) |
+| `IMAGE_SEARCH_PROVIDER` | `wikimedia` | `wikimedia`, `openverse` oder `auto` |
+| `IMAGE_SEARCH_URL` | — | optionaler Openverse-Endpunkt (erzwingt Openverse) |
+| `IMAGE_SEARCH_RESULTS` | `12` | Treffer pro Bildersuche |
 | `TZ` | `Europe/Berlin` | Zeitzone für Datumsanzeigen |
 
 Modell und Erinnerungs-Intervall lassen sich zusätzlich **in der App** unter
@@ -177,6 +180,12 @@ Umgebung gelesen.
    Beschreibung, Kategorie, Marke, **Kaufdatum**, **Kaufpreis (optional)**,
    weitere **Fotos** (mehrere, jederzeit ergänz-, **dreh- und löschbar**) sowie die
    **Originalrechnung**:
+   * **Fotos per Strg+V/Cmd+V** aus der Zwischenablage einfügen – z. B. ein
+     kopiertes Produktbild; das Formular bleibt dabei erhalten.
+   * **„🔎 Bilder suchen"** durchsucht **Wikimedia Commons** (frei lizenzierte
+     Bilder, ohne API-Key) und importiert mehrere ausgewählte Treffer direkt als
+     Fotos. Mit `IMAGE_SEARCH_PROVIDER=openverse` (oder `auto` = beide Quellen)
+     lässt sich stattdessen/ergänzend Openverse nutzen.
    * **„In Paperless suchen“** durchsucht dein Paperless-ngx im LAN
      (Volltextsuche mit Name/Marke/Kaufjahr, Ergebnisliste mit Datum und
      Korrespondent). Ein Tipp **verlinkt** das Dokument in Paperless
@@ -313,6 +322,8 @@ betreiben (oder hinter VPN/Reverse-Proxy mit Auth).
 | `GET /api/recall` | fällige Gegenstände zur Prüfung |
 | `POST /api/recall/:id` | `{ verdict: keep\|unused\|discard\|not_found }` |
 | `POST/DELETE /api/bins/:id/full` | Kiste als voll markieren / freigeben |
+| `GET /api/images/search?q=` | Bildersuche (Wikimedia Commons, optional Openverse) |
+| `POST /api/items/:id/photos/import` | Bilder von URLs importieren (`{ urls: [...] }`, max. 6) |
 | `GET /api/housekeeping` | Umlager-Vorschläge (ähnliche Artikel, verschiedene Kisten) |
 | `POST /api/housekeeping/analyze` | KI-Prüfung: Maße/Gewicht/Beschreibung |
 | `POST /api/housekeeping/dismiss` | Vorschlag dauerhaft ausblenden (`{ signature }`) |

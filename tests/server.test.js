@@ -1193,3 +1193,80 @@ test('Aufräumen: ohne LLM -> 503', async () => {
     assert.equal(res.status, 503);
   } finally { await t.close(); }
 });
+
+test('Bildersuche und Bild-Import von URLs', async () => {
+  const { default: http } = await import('node:http');
+  const { default: sharp } = await import('sharp');
+  const png = await sharp({ create: { width: 800, height: 600, channels: 3, background: { r: 30, g: 110, b: 200 } } }).png().toBuffer();
+  let port = 0;
+  const fake = http.createServer((req, res) => {
+    if (req.url.startsWith('/search')) {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({
+        results: [
+          { id: '1', title: 'Kettle', url: `http://127.0.0.1:${port}/img.png`, thumbnail: `http://127.0.0.1:${port}/img.png`, creator: 'Ann', license: 'cc0', source: 'test' },
+          { id: '2', title: 'Ohne URL', thumbnail: 'x' },
+        ],
+      }));
+      return;
+    }
+    if (req.url === '/img.png') {
+      res.writeHead(200, { 'content-type': 'image/png' });
+      res.end(png);
+      return;
+    }
+    if (req.url === '/page') {
+      res.writeHead(200, { 'content-type': 'text/html' });
+      res.end('<html>kein Bild</html>');
+      return;
+    }
+    res.writeHead(404); res.end();
+  });
+  await new Promise((resolve) => fake.listen(0, '127.0.0.1', resolve));
+  port = fake.address().port;
+
+  const t = await boot({ IMAGE_SEARCH_URL: `http://127.0.0.1:${port}/search` });
+  try {
+    const search = await t.call('GET', '/api/images/search?q=kettle');
+    assert.equal(search.status, 200);
+    assert.equal(search.json.results.length, 1);
+    assert.equal(search.json.results[0].url, `http://127.0.0.1:${port}/img.png`);
+
+    const empty = await t.call('GET', '/api/images/search?q=x');
+    assert.equal(empty.status, 400);
+
+    const bin = (await t.call('POST', '/api/bins', { code: 'A1', dims_cm: { length_cm: 80, width_cm: 60, height_cm: 60 } })).json.bin;
+    const item = (await t.call('POST', '/api/items', { name: 'Wasserkocher', bin_id: bin.id, dims_cm: { length_cm: 20, width_cm: 20, height_cm: 25 } })).json.item;
+
+    const imported = await t.call('POST', `/api/items/${item.id}/photos/import`, {
+      urls: [
+        `http://127.0.0.1:${port}/img.png`,
+        `http://127.0.0.1:${port}/page`,
+        'ftp://nope/img.png',
+        'not-a-url',
+      ],
+    });
+    assert.equal(imported.status, 200);
+    assert.equal(imported.json.imported.length, 1);
+    assert.equal(imported.json.failed.length, 3);
+    assert.equal(imported.json.item.photos.length, 1);
+    assert.match(imported.json.item.photos[0], /\.webp$/);
+
+    const photo = await fetch(t.base + imported.json.item.photos[0]);
+    assert.equal(photo.headers.get('content-type'), 'image/webp');
+    const meta = await sharp(Buffer.from(await photo.arrayBuffer())).metadata();
+    assert.ok(meta.width <= 1000 && meta.height <= 1000);
+    assert.equal(meta.format, 'webp');
+
+    // nichts ladbar -> 502
+    const none = await t.call('POST', `/api/items/${item.id}/photos/import`, { urls: ['ftp://x/y.png'] });
+    assert.equal(none.status, 502);
+
+    // kein Artikel -> 404
+    const missing = await t.call('POST', '/api/items/99999/photos/import', { urls: [`http://127.0.0.1:${port}/img.png`] });
+    assert.equal(missing.status, 404);
+  } finally {
+    await t.close();
+    await new Promise((resolve) => fake.close(resolve));
+  }
+});
