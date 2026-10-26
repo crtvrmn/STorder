@@ -1541,6 +1541,41 @@ async function assignAllInbox() {
 $('#btn-inbox').addEventListener('click', addToInbox);
 $('#btn-inbox-assign').addEventListener('click', assignAllInbox);
 
+/* ----------------------- Kisten-Vorschau / Auswahl ---------------------- */
+
+async function fetchItemSuggestion(itemId) {
+  try {
+    const { suggestion } = await api('/api/suggest', { method: 'POST', body: { item_id: itemId } });
+    return suggestion;
+  } catch {
+    return null;
+  }
+}
+
+function boxLabel(box) {
+  if (!box) return '—';
+  return `${box.code}${box.name ? ` · ${box.name}` : ''}`;
+}
+
+function boxHint(suggestion) {
+  if (!suggestion?.best) return suggestion?.reason_text ?? 'Kein Platz gefunden';
+  const b = suggestion.best.box;
+  return `${boxLabel(b)} · ${liters(b.free_liters)} frei · nachher ${Math.round(b.fill_after_percent ?? 0)} %`;
+}
+
+/** Nach dem Speichern in eine Kiste legen (null = automatisch). */
+async function placeItemInBin(itemId, binId) {
+  if (binId) {
+    const { item } = await api(`/api/items/${itemId}/move`, { method: 'POST', body: { bin_id: binId } });
+    return { bin: item.bin?.code ?? null };
+  }
+  const res = await assignInboxItems([itemId]);
+  if (!res.assigned.length) {
+    throw new Error(res.failed[0]?.reason ?? 'Kein Platz gefunden');
+  }
+  return { bin: res.assigned[0].bin ?? null };
+}
+
 /* ----------------------------- Detailansicht ---------------------------- */
 
 function openPhotoViewer(photoPath, item) {
@@ -1601,8 +1636,12 @@ function renderItemDetail(item) {
         ${detailRows(item).map(([label, value]) => `<dt>${esc(label)}</dt><dd>${esc(value)}</dd>`).join('')}
         ${invoice ? `<dt>Rechnung</dt><dd>${invoice}</dd>` : ''}
       </dl>
+      ${item.bin_id ? '' : '<p class="muted" id="detail-box-hint">Ablageort wird gesucht…</p>'}
+      ${item.bin_id ? '' : `<div class="row">
+        <button type="button" class="primary" id="detail-store">Einlagern</button>
+        <button type="button" class="small ghost" id="detail-pick">Andere Kiste</button>
+      </div>`}
       <div class="row" style="margin-top:6px">
-        ${item.bin_id ? '' : '<button type="button" class="primary" id="detail-store">Einlagern</button>'}
         <button type="button" class="${item.bin_id ? 'primary' : 'small ghost'}" id="detail-edit">✎ Bearbeiten</button>
         <button type="button" class="small ghost" id="detail-move">Umräumen</button>
         <button type="button" class="small danger" id="detail-delete">Entfernen</button>
@@ -1616,10 +1655,16 @@ function renderItemDetail(item) {
   });
   const storeBtn = $('#detail-store');
   if (storeBtn) {
+    fetchItemSuggestion(item.id).then((suggestion) => {
+      const hint = $('#detail-box-hint');
+      if (hint) hint.textContent = `Vorschlag: ${boxHint(suggestion)}`;
+      if (storeBtn && suggestion?.best?.box) storeBtn.textContent = `Einlagern (${suggestion.best.box.code})`;
+    });
     storeBtn.addEventListener('click', async () => {
       closeDialog();
       await assignInboxItem(item.id);
     });
+    $('#detail-pick').addEventListener('click', () => openDetailBoxPicker(item));
   }
   $('#detail-edit').addEventListener('click', () => {
     closeDialog();
@@ -1637,6 +1682,48 @@ function renderItemDetail(item) {
       toast('Entfernt', 'ok');
       refreshItemViews();
     } catch (err) { toast(err.message, 'error'); }
+  });
+}
+
+async function placeAndRefresh(itemId, binId) {
+  try {
+    const placed = await placeItemInBin(itemId, binId);
+    toast(placed.bin ? `In ${placed.bin} eingelagert` : 'Eingelagert', 'ok');
+    closeDialog();
+    refreshItemViews();
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
+async function openDetailBoxPicker(item) {
+  const suggestion = await fetchItemSuggestion(item.id);
+  if (!suggestion) {
+    toast('Kein Vorschlag möglich.', 'error');
+    return;
+  }
+  const fitting = (suggestion.considered ?? []).filter((c) => c.fits);
+  if (!fitting.length) {
+    toast(suggestion.reason_text ?? 'Keine Kiste hat genug Platz – bitte Maße ergänzen.', 'error');
+    return;
+  }
+  openChoiceSheet({
+    title: 'Kiste wählen',
+    body: `<p class="muted">Vorschlag: ${esc(boxHint(suggestion))}</p>`,
+    choices: [
+      {
+        label: 'Automatisch',
+        hint: suggestion.best ? boxLabel(suggestion.best.box) : 'bester Vorschlag',
+        kind: 'active',
+        onSelect: () => placeAndRefresh(item.id, null),
+      },
+      ...fitting.map((c) => ({
+        label: `${c.code}${c.name ? ` · ${c.name}` : ''}${c.category_match ? '  ★' : ''}`,
+        hint: `${c.location || 'ohne Ort'} · ${liters(c.free_liters)} frei · nachher ${Math.round(c.fill_after_percent ?? 0)} % voll`,
+        kind: suggestion.best?.box?.id === c.box_id ? 'active' : '',
+        onSelect: () => placeAndRefresh(item.id, c.box_id),
+      })),
+    ],
   });
 }
 
@@ -1676,6 +1763,8 @@ function renderItemEditor(item) {
       <button type="button" class="photo-remove" data-remove-photo="${esc(p)}" title="Foto entfernen" aria-label="Foto entfernen">✕</button>
     </span>`).join('');
 
+  let chosenBin = null;
+
   openDialog({
     title: 'Gegenstand bearbeiten',
     okText: 'Speichern',
@@ -1703,6 +1792,20 @@ function renderItemEditor(item) {
           </select>
         </div>
       </div>
+      ${item.bin_id ? '' : `
+      <div class="field">
+        <label>Einlagern</label>
+        <label class="toggle-row">
+          <input type="checkbox" name="assign" checked>
+          <span class="toggle-text">
+            <strong>Nach dem Speichern einlagern</strong>
+            <small id="editor-box-hint">Vorschlag wird gesucht…</small>
+          </span>
+        </label>
+        <select name="target_bin" id="editor-target-bin" disabled>
+          <option value="">Automatisch (bester Vorschlag)</option>
+        </select>
+      </div>`}
       <div class="grid-3">
         <div class="field"><label>Kaufdatum</label><input name="purchase_date" type="date" value="${esc(item.purchase_date ?? '')}"></div>
         <div class="field"><label>Kaufpreis €</label><input name="purchase_price" type="text" inputmode="decimal" autocomplete="off" value="${esc(price)}" placeholder="24,90"></div>
@@ -1764,7 +1867,19 @@ function renderItemEditor(item) {
       };
       if (dimsFilled === 3) body.dims_cm = dims;
       await api(`/api/items/${item.id}`, { method: 'PUT', body });
-      toast('Gespeichert', 'ok');
+
+      if (!item.bin_id && fd.get('assign')) {
+        const target = fd.get('target_bin');
+        try {
+          const placed = await placeItemInBin(item.id, target ? Number(target) : null);
+          toast(placed.bin ? `In ${placed.bin} eingelagert` : 'Eingelagert', 'ok');
+        } catch (err) {
+          // Details sind gespeichert; der Artikel bleibt im Posteingang.
+          toast(`Gespeichert, aber nicht eingelagert: ${err.message}`, 'error');
+        }
+      } else {
+        toast('Gespeichert', 'ok');
+      }
       refreshItemViews();
     },
   });
@@ -1833,6 +1948,30 @@ function renderItemEditor(item) {
       refreshItemViews();
     } catch (err) { toast(err.message, 'error'); }
   });
+
+  if (!item.bin_id) {
+    const hintEl = $('#editor-box-hint');
+    const selectEl = $('#editor-target-bin');
+    fetchItemSuggestion(item.id).then((suggestion) => {
+      if (hintEl) hintEl.textContent = `Vorschlag: ${boxHint(suggestion)}`;
+      if (!selectEl || !suggestion) return;
+      selectEl.innerHTML = [
+        `<option value="">Automatisch – ${esc(suggestion.best ? boxLabel(suggestion.best.box) : 'bester Vorschlag')}</option>`,
+        ...(suggestion.considered ?? []).filter((c) => c.fits).map((c) => (
+          `<option value="${c.box_id}">${esc(c.code)}${c.name ? ` · ${esc(c.name)}` : ''} · ${liters(c.free_liters)} frei · nachher ${Math.round(c.fill_after_percent ?? 0)} %</option>`
+        )),
+      ].join('');
+      selectEl.disabled = false;
+      selectEl.addEventListener('change', () => {
+        const chosen = (suggestion.considered ?? []).find((c) => c.box_id === Number(selectEl.value));
+        if (hintEl) {
+          hintEl.textContent = chosen
+            ? `Gewählt: ${boxLabel(chosen)} · ${liters(chosen.free_liters)} frei`
+            : `Vorschlag: ${boxHint(suggestion)}`;
+        }
+      });
+    });
+  }
 
   const deleteBtn = $('#editor-delete-item');
   if (deleteBtn) {

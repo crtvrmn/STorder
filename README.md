@@ -145,6 +145,13 @@ Umgebung gelesen.
    nicht eingelagerten Artikel (Badge mit Anzahl); dort gibt es pro Artikel
    **Einlagern**, **Bearbeiten** und **„Alle einlagern"** für den ganzen Stapel.
    Die KI-Erkennung läuft im Hintergrund weiter, während du die Kiste einräumst.
+
+   Beim Öffnen eines Posteingang-Artikels zeigt Storder den **Kisten-Vorschlag**
+   (z. B. „Vorschlag: B6 · Dokumente & Papier · 21,9 l frei") und erlaubt direkt
+   die Auswahl: **„Einlagern (B6)"** nimmt den Vorschlag, **„Andere Kiste"**
+   listet alle Kisten mit genug Platz. Im Bearbeiten-Dialog gibt es dafür
+   **„Nach dem Speichern einlagern"** plus eine Kisten-Auswahl („Automatisch"
+   oder eine bestimmte Kiste) – Details speichern und einlagern in einem Schritt.
 8. **Rotes ✕** (statt „Verwerfen“) öffnet drei große Optionen:
    **Passt nicht** (Maße prüfen, Kiste ausschließen, neu suchen),
    **Kiste voll** (Kiste ausschließen, anderen Platz suchen) und
