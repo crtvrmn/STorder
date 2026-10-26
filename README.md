@@ -22,7 +22,9 @@ Posteingang und werden später am PC oder Handy in Ruhe durchgesehen, ergänzt u
 automatisch oder manuell eingelagert. Alle Bilder werden auf **max. 1000 px**
 verkleinert und als **WebP** gespeichert.
 
-Der Tab **Aufräumen** hilft beim Sortieren: Er findet ähnliche Artikel in
+**Zahnrad oben rechts → Einstellungen** bündelt Aufräumen, Prüfen und die
+Kategorie-Verwaltung (unten bleiben nur Einlagern, Posteingang, Kisten, Suche).
+**Aufräumen** hilft beim Sortieren: Es findet ähnliche Artikel in
 verschiedenen Kisten („ESP32 in A1, ähnlicher in K1 – zusammenlegen?") und prüft
 per einfacher Logik die **Dichte** (Gewicht ÷ Volumen): schwerer als Blei
 (11,34 g/cm³) oder leichter als Helium (0,0001786 g/cm³) ist praktisch immer ein
@@ -165,7 +167,7 @@ Umgebung gelesen.
    listet alle Kisten mit genug Platz. Im Bearbeiten-Dialog gibt es dafür
    **„Nach dem Speichern einlagern"** plus eine Kisten-Auswahl („Automatisch"
    oder eine bestimmte Kiste) – Details speichern und einlagern in einem Schritt.
-8. **Aufräumen** – Tab **„Aufräumen"**, prüft automatisch beim Öffnen:
+8. **Aufräumen** – **Zahnrad → Einstellungen → Aufräumen**, prüft automatisch:
    * **Umlager-Vorschläge** für ähnliche Artikel in verschiedenen Kisten
      (z. B. „ESP32 liegt in A1, ein ähnlicher in K1 – zusammenlegen?").
    * **Dichte-Prüfung**: „schwerer als Blei" (z. B. 50 g bei 1 cm³) oder
@@ -220,7 +222,7 @@ Umgebung gelesen.
    und Ort (z. B. „A23“ oder „Werkstatt“). Über die **Kategorie-Chips** (mit
    Anzahl) lässt sich der Bestand filtern, auch mehrere Kategorien gleichzeitig;
    „Alle" hebt den Filter auf.
-15. **Prüfen** – nach dem eingestellten Zeitraum erscheinen zufällige
+15. **Prüfen** – **Zahnrad → Einstellungen → Prüfen**: nach dem eingestellten Zeitraum erscheinen zufällige
    Gegenstände: *Behalte ich*, *Nutze ich nicht*, *Aussortieren* oder
    *Nicht gefunden*. Aussortierte wandern aus dem Bestand.
 
@@ -272,7 +274,11 @@ im Klartext angezeigt.
 ## Kategorien
 
 Kategorien sind **vorgegeben** (Mehrfachauswahl, max. 5 pro Artikel) und decken
-Haushalt, Werkstatt und Elektronik ab:
+Haushalt, Werkstatt und Elektronik ab. Unter **Zahnrad → Einstellungen →
+Kategorien bearbeiten** lassen sich Kategorien **hinzufügen, umbenennen und
+löschen** (Löschen nur, wenn sie keiner mehr nutzt; Umbenennen aktualisiert alle
+Artikel). Die Änderungen bleiben gespeichert und stehen sofort in den
+Auswahl-Chips bereit:
 
 `Elektronik`, `Computer & Zubehör`, `Netzwerk`, `USB & Kabel`, `Smart Home`,
 `Messen & Prüfen`, `Werkzeug`, `Haushalt`, `Küche`, `Bad & Pflege`,
@@ -329,6 +335,10 @@ betreiben (oder hinter VPN/Reverse-Proxy mit Auth).
 | `GET /api/items?bin_id=…` | Inhalt einer Kiste |
 | `POST /api/items/:id/move` | umräumen (`bin_id` oder `"auto"`) |
 | `GET /api/categories` | vorgegebene Kategorien (`taxonomy`) + verwendete mit Anzahl |
+| `GET /api/settings/categories` | Kategorien + Nutzungszähler (Verwaltung) |
+| `POST /api/settings/categories` | Kategorie hinzufügen (`{ name }`) |
+| `PUT /api/settings/categories` | Kategorie umbenennen (`{ from, to }`, aktualisiert Artikel) |
+| `DELETE /api/settings/categories/:name` | Kategorie löschen (nur ungenutzt) |
 | `GET /api/search?q=…&categories=A,B` | Freitextsuche, optional nach Kategorien gefiltert |
 | `POST /api/analyze` | `{ image: dataURL, hint? }` → Produktdaten + Foto |
 | `POST /api/suggest` | `{ dims_cm, weight_g?, category?, name?, quantity?, volume_liters?, prefer_box_id?, exclude_box_ids? }` → Ablageort (inkl. `category_match`) |

@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { normalizeDimensions, computeRequiredVolume } from '../lib/geometry.js';
 import { findFreePosition, analyzeBox, boxExtentsCm, parseAxes } from '../lib/placement.js';
-import { normalizeCategories } from '../lib/categories.js';
+import { normalizeCategories, sanitizeCategoryName, setTaxonomy } from '../lib/categories.js';
 
 const SCHEMA_VERSION = 5;
 
@@ -198,8 +198,29 @@ export function openDatabase(dataDir) {
   db.exec(SCHEMA);
   migrateColumns(db);
   migrateCategories(db);
+  // Vom Nutzer bearbeitete Kategorienliste aus den Einstellungen übernehmen.
+  const stored = getSettings(db).category_taxonomy;
+  setTaxonomy(Array.isArray(stored) ? stored : undefined);
   db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)').run('schema_version', String(SCHEMA_VERSION));
   return { db, file };
+}
+
+/** Kategorie in allen Artikeln umbenennen (Primärkategorie bleibt konsistent). */
+export function renameCategory(db, from, to) {
+  const fromName = String(from ?? '').trim();
+  const toName = sanitizeCategoryName(to);
+  if (!fromName || !toName) throw new HttpError(400, 'Ungültiger Kategoriename.');
+  const rows = db.prepare("SELECT id, categories FROM items WHERE COALESCE(categories, '') <> ''").all();
+  const update = db.prepare('UPDATE items SET categories = ?, category = ? WHERE id = ?');
+  let changed = 0;
+  for (const row of rows) {
+    const list = String(row.categories).split('|').map((c) => c.trim()).filter(Boolean);
+    if (!list.includes(fromName)) continue;
+    const next = [...new Set(list.map((c) => (c === fromName ? toName : c)))];
+    update.run(next.join('|'), next[0] ?? '', row.id);
+    changed++;
+  }
+  return changed;
 }
 
 /* ------------------------------- Settings ------------------------------- */

@@ -34,6 +34,7 @@ import {
   setItemInvoice,
   clearItemInvoice,
   setBinPhoto,
+  renameCategory,
 } from '../src/db.js';
 
 function freshDb() {
@@ -548,5 +549,25 @@ test('Migration: alte Kategorie wird auf die Taxonomie abgebildet', () => {
   assert.deepEqual(migrated.categories, ['Elektronik', 'USB & Kabel']);
   assert.equal(migrated.category, 'Elektronik');
   reopened.db.close();
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('Kategorien: eigene Liste wird in den Einstellungen gespeichert', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'storder-tax-'));
+  let { db } = openDatabase(dir);
+  setSettings(db, { category_taxonomy: ['Elektronik', '3D-Druck'] });
+  db.close();
+
+  ({ db } = openDatabase(dir));
+  const item = createItem(db, {
+    name: 'Filament',
+    categories: ['3D-Druck'],
+    dims_cm: dims(20, 20, 10),
+  });
+  assert.deepEqual(item.categories, ['3D-Druck']);
+  const renamed = renameCategory(db, '3D-Druck', '3D Druck');
+  assert.equal(renamed, 1);
+  assert.deepEqual(getItem(db, item.id).categories, ['3D Druck']);
+  db.close();
   fs.rmSync(dir, { recursive: true, force: true });
 });

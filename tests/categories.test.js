@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { CATEGORY_TAXONOMY, canonicalCategory, normalizeCategories } from '../lib/categories.js';
+import { CATEGORY_TAXONOMY, canonicalCategory, normalizeCategories, getTaxonomy, setTaxonomy, sanitizeCategoryName } from '../lib/categories.js';
 
 test('Taxonomie: eindeutig und ohne Kommas/Pipes', () => {
   assert.ok(CATEGORY_TAXONOMY.length >= 10);
@@ -30,4 +30,20 @@ test('canonicalCategory: Einzelabbildung', () => {
   assert.deepEqual(canonicalCategory('Netzwerktechnik'), ['Netzwerk']);
   assert.equal(canonicalCategory('gibtsnicht'), null);
   assert.equal(canonicalCategory(''), null);
+});
+
+test('setTaxonomy: eigene Kategorien und Validierung', () => {
+  setTaxonomy(['Elektronik', '3D-Druck', '3D-Druck', '  ', 'x,y']);
+  assert.deepEqual(getTaxonomy(), ['Elektronik', '3D-Druck']);
+  assert.deepEqual(normalizeCategories(['3d-druck', 'elektronikzubehör']), ['3D-Druck', 'Elektronik']);
+  // Alias auf gelöschte Kategorie fällt weg
+  setTaxonomy(['Werkzeug']);
+  assert.deepEqual(normalizeCategories(['Elektronikzubehör']), []);
+  assert.deepEqual(normalizeCategories(['werkzeug']), ['Werkzeug']);
+  assert.equal(sanitizeCategoryName('  Neu  '), 'Neu');
+  assert.equal(sanitizeCategoryName('a,b'), null);
+  assert.equal(sanitizeCategoryName(''), null);
+  // leere Liste -> Standard
+  setTaxonomy([]);
+  assert.ok(getTaxonomy().includes('Elektronik'));
 });

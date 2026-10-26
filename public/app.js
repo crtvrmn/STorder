@@ -157,7 +157,7 @@ window.addEventListener('hashchange', () => showView(location.hash.slice(1), { p
 
 /* ------------------------------ Einstellungen --------------------------- */
 
-async function openSettings() {
+async function openAppSettings() {
   let data;
   try {
     data = await api('/api/settings');
@@ -204,7 +204,142 @@ async function openSettings() {
   });
 }
 
-$('#btn-settings').addEventListener('click', openSettings);
+/* ------------------------- Einstellungen-Menü -------------------------- */
+
+function openSettingsMenu() {
+  openChoiceSheet({
+    title: 'Einstellungen',
+    cancelLabel: 'Schließen',
+    choices: [
+      {
+        label: '🧹 Aufräumen',
+        hint: 'Dichte prüfen und ähnliche Artikel zusammenlegen',
+        onSelect: () => showView('housekeeping'),
+      },
+      {
+        label: '↻ Prüfen',
+        hint: 'Erinnerung: „Nutzt du das noch?"',
+        onSelect: () => showView('recall'),
+      },
+      {
+        label: '🏷 Kategorien bearbeiten',
+        hint: 'Hinzufügen, umbenennen, löschen',
+        onSelect: () => openCategoryManager(),
+      },
+      {
+        label: '⚙️ App-Einstellungen',
+        hint: 'Modelle, Prüf-Erinnerung, Status',
+        onSelect: () => openAppSettings(),
+      },
+    ],
+  });
+}
+
+/* --------------------------- Kategorien verwalten ------------------------ */
+
+async function openCategoryManager() {
+  let editing = null;
+
+  const fetchData = async () => {
+    const data = await api('/api/settings/categories');
+    state.taxonomy = data.taxonomy ?? state.taxonomy;
+    return data;
+  };
+
+  const reload = async () => {
+    try {
+      const data = await fetchData();
+      editing = null;
+      render(data);
+    } catch (err) {
+      toast(err.message, 'error');
+    }
+  };
+
+  function render(data) {
+    const rows = data.usage.map(({ name, count }) => (editing === name ? `
+      <div class="cat-row">
+        <input id="cat-rename-input" value="${esc(name)}" maxlength="40">
+        <button type="button" class="small primary" data-cat-save="${esc(name)}">OK</button>
+        <button type="button" class="small ghost" data-cat-cancel="1" title="Abbrechen">✕</button>
+      </div>` : `
+      <div class="cat-row">
+        <span class="cat-name">${esc(name)}</span>
+        <span class="muted cat-count">${count}×</span>
+        <button type="button" class="small ghost" data-cat-rename="${esc(name)}" title="Umbenennen">✎</button>
+        <button type="button" class="small danger" data-cat-delete="${esc(name)}" ${count ? 'disabled' : ''} title="${count ? `wird von ${count} Artikel(n) genutzt` : 'Löschen'}">✕</button>
+      </div>`)).join('');
+
+    openDialog({
+      title: 'Kategorien bearbeiten',
+      okText: 'Schließen',
+      body: `
+        <div class="cat-manager">${rows}</div>
+        <div class="row" style="margin-top:10px">
+          <input id="cat-new" placeholder="Neue Kategorie" maxlength="40">
+          <button type="button" class="small primary shrink" id="cat-add">Hinzufügen</button>
+        </div>
+        <p class="muted">Umbenennen aktualisiert alle Artikel. Löschen ist nur bei ungenutzten Kategorien möglich.</p>`,
+      onOk: async () => {},
+    });
+    $('#dialog-ok').hidden = true;
+
+    $$('#dialog-body [data-cat-rename]').forEach((btn) => {
+      btn.addEventListener('click', () => { editing = btn.dataset.catRename; render(data); });
+    });
+    $$('#dialog-body [data-cat-cancel]').forEach((btn) => {
+      btn.addEventListener('click', () => { editing = null; render(data); });
+    });
+    $$('#dialog-body [data-cat-save]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const to = $('#cat-rename-input')?.value ?? '';
+        try {
+          const res = await api('/api/settings/categories', {
+            method: 'PUT',
+            body: { from: btn.dataset.catSave, to },
+          });
+          toast(`Umbenannt${res.items_updated ? ` – ${res.items_updated} Artikel aktualisiert` : ''}`, 'ok');
+          state.taxonomy = res.taxonomy ?? state.taxonomy;
+          await reload();
+          refreshItemViews();
+          loadCategories();
+        } catch (err) { toast(err.message, 'error'); }
+      });
+    });
+    $$('#dialog-body [data-cat-delete]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        if (btn.disabled) return;
+        try {
+          await api(`/api/settings/categories/${encodeURIComponent(btn.dataset.catDelete)}`, { method: 'DELETE' });
+          toast('Kategorie gelöscht', 'ok');
+          await reload();
+          loadCategories();
+        } catch (err) { toast(err.message, 'error'); }
+      });
+    });
+    $('#cat-add')?.addEventListener('click', async () => {
+      const name = $('#cat-new')?.value ?? '';
+      try {
+        const res = await api('/api/settings/categories', { method: 'POST', body: { name } });
+        toast('Kategorie hinzugefügt', 'ok');
+        state.taxonomy = res.taxonomy ?? state.taxonomy;
+        await reload();
+        loadCategories();
+      } catch (err) { toast(err.message, 'error'); }
+    });
+    $('#cat-new')?.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') { event.preventDefault(); $('#cat-add')?.click(); }
+    });
+  }
+
+  try {
+    render(await fetchData());
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
+$('#btn-settings').addEventListener('click', openSettingsMenu);
 
 /* -------------------------------- Dialog -------------------------------- */
 

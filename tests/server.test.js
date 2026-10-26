@@ -1263,3 +1263,46 @@ test('Analyse: KI-Kategorie wird auf die Taxonomie abgebildet', async () => {
     assert.deepEqual(res.json.analysis.categories, ['Elektronik', 'USB & Kabel']);
   } finally { await t.close(); }
 });
+
+test('Kategorien verwalten: hinzufügen, umbenennen, löschen', async () => {
+  const t = await boot();
+  try {
+    const list = await t.call('GET', '/api/settings/categories');
+    assert.equal(list.status, 200);
+    assert.ok(list.json.taxonomy.includes('Elektronik'));
+    assert.ok(list.json.usage.every((u) => typeof u.count === 'number'));
+
+    const added = await t.call('POST', '/api/settings/categories', { name: '3D-Druck' });
+    assert.equal(added.status, 200);
+    assert.ok(added.json.taxonomy.includes('3D-Druck'));
+    assert.equal((await t.call('POST', '/api/settings/categories', { name: '3d-druck' })).status, 409);
+    assert.equal((await t.call('POST', '/api/settings/categories', { name: 'a,b' })).status, 400);
+
+    const bin = (await t.call('POST', '/api/bins', { code: 'A1', dims_cm: { length_cm: 80, width_cm: 60, height_cm: 60 } })).json.bin;
+    const item = (await t.call('POST', '/api/items', {
+      name: 'Filament', bin_id: bin.id, categories: ['3D-Druck'], dims_cm: { length_cm: 20, width_cm: 20, height_cm: 10 },
+    })).json.item;
+    assert.deepEqual(item.categories, ['3D-Druck']);
+
+    const renamed = await t.call('PUT', '/api/settings/categories', { from: '3D-Druck', to: '3D Druck' });
+    assert.equal(renamed.status, 200);
+    assert.equal(renamed.json.items_updated, 1);
+    assert.ok(renamed.json.taxonomy.includes('3D Druck'));
+    const after = await t.call('GET', `/api/items/${item.id}`);
+    assert.deepEqual(after.json.item.categories, ['3D Druck']);
+
+    // genutzte Kategorie löschen -> 409
+    assert.equal((await t.call('DELETE', '/api/settings/categories/3D%20Druck')).status, 409);
+    // ungenutzte löschen
+    const deleted = await t.call('DELETE', '/api/settings/categories/Spielzeug');
+    assert.equal(deleted.status, 200);
+    assert.ok(!deleted.json.taxonomy.includes('Spielzeug'));
+    assert.equal((await t.call('DELETE', '/api/settings/categories/gibtsnicht')).status, 404);
+
+    const cats = await t.call('GET', '/api/categories');
+    assert.ok(!cats.json.taxonomy.includes('Spielzeug'));
+    assert.ok(cats.json.taxonomy.includes('3D Druck'));
+    const usage = Object.fromEntries((await t.call('GET', '/api/settings/categories')).json.usage.map((u) => [u.name, u.count]));
+    assert.equal(usage['3D Druck'], 1);
+  } finally { await t.close(); }
+});

@@ -24,7 +24,7 @@ import { validateBoxInput, ValidationError } from '../lib/validate.js';
 import { suggestPlacement } from '../lib/suggest.js';
 import { findSimilarItems, findConsolidationSuggestions } from '../lib/similar.js';
 import { findPlausibilityIssues } from '../lib/plausibility.js';
-import { CATEGORY_TAXONOMY, normalizeCategories } from '../lib/categories.js';
+import { getTaxonomy, normalizeCategories, sanitizeCategoryName, setTaxonomy } from '../lib/categories.js';
 import { analyzeImage } from './analyze.js';
 import { selectRecallItems, toRecallItem } from './recall.js';
 import {
@@ -41,6 +41,7 @@ import {
   setBinPhoto,
   dismissSuggestion,
   listDismissedSuggestions,
+  renameCategory,
   listItems,
   getItem,
   createItem,
@@ -647,7 +648,73 @@ export function createApp({ config, db, llm, paperless }) {
     const categories = [...counts.entries()]
       .map(([name, count]) => ({ name, count }))
       .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'de'));
-    res.json({ categories, taxonomy: CATEGORY_TAXONOMY });
+    res.json({ categories, taxonomy: getTaxonomy() });
+  });
+
+  /* ----------------------- Kategorien verwalten -------------------------- */
+
+  function categoryUsage() {
+    const items = listItems(db, { status: 'stored', limit: 5000 });
+    const counts = new Map();
+    for (const item of items) {
+      for (const cat of item.categories ?? []) counts.set(cat, (counts.get(cat) ?? 0) + 1);
+    }
+    return counts;
+  }
+
+  app.get('/api/settings/categories', (req, res) => {
+    const counts = categoryUsage();
+    const taxonomy = getTaxonomy();
+    res.json({
+      taxonomy,
+      usage: taxonomy.map((name) => ({ name, count: counts.get(name) ?? 0 })),
+    });
+  });
+
+  app.post('/api/settings/categories', (req, res) => {
+    const name = sanitizeCategoryName(req.body?.name);
+    if (!name) throw new HttpError(400, 'Bitte einen gültigen Namen angeben (max. 40 Zeichen, kein , oder |).');
+    const taxonomy = getTaxonomy();
+    if (taxonomy.some((c) => c.toLowerCase() === name.toLowerCase())) {
+      throw new HttpError(409, 'Diese Kategorie gibt es schon.');
+    }
+    if (taxonomy.length >= 60) throw new HttpError(400, 'Maximal 60 Kategorien.');
+    const next = [...taxonomy, name];
+    setSettings(db, { category_taxonomy: next });
+    setTaxonomy(next);
+    res.json({ taxonomy: getTaxonomy() });
+  });
+
+  app.put('/api/settings/categories', (req, res) => {
+    const from = String(req.body?.from ?? '').trim();
+    const to = sanitizeCategoryName(req.body?.to);
+    if (!from || !to) throw new HttpError(400, 'Bitte alten und neuen Namen angeben.');
+    const taxonomy = getTaxonomy();
+    const index = taxonomy.findIndex((c) => c.toLowerCase() === from.toLowerCase());
+    if (index === -1) throw new HttpError(404, 'Kategorie nicht gefunden.');
+    if (taxonomy.some((c, i) => i !== index && c.toLowerCase() === to.toLowerCase())) {
+      throw new HttpError(409, 'Diese Kategorie gibt es schon.');
+    }
+    const next = taxonomy.map((c, i) => (i === index ? to : c));
+    setTaxonomy(next);
+    const changed = renameCategory(db, taxonomy[index], to);
+    setSettings(db, { category_taxonomy: next });
+    res.json({ taxonomy: getTaxonomy(), from: taxonomy[index], to, items_updated: changed });
+  });
+
+  app.delete('/api/settings/categories/:name', (req, res) => {
+    const name = String(req.params.name ?? '').trim();
+    const taxonomy = getTaxonomy();
+    const index = taxonomy.findIndex((c) => c.toLowerCase() === name.toLowerCase());
+    if (index === -1) throw new HttpError(404, 'Kategorie nicht gefunden.');
+    const used = categoryUsage().get(taxonomy[index]) ?? 0;
+    if (used > 0) {
+      throw new HttpError(409, `„${taxonomy[index]}“ wird noch von ${used} Artikel(n) genutzt. Bitte erst umbenennen.`);
+    }
+    const next = taxonomy.filter((_, i) => i !== index);
+    setTaxonomy(next);
+    setSettings(db, { category_taxonomy: next });
+    res.json({ taxonomy: getTaxonomy() });
   });
 
   /* ------------------------- Foto + KI-Analyse ------------------------- */
