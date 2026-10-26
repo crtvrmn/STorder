@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#10161f">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Storder – Lagerkatalog</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%2310161f'/%3E%3Cpath d='M25 40h50v35H25z' fill='%234fd1c5'/%3E%3Cpath d='M25 40l10-12h40l10 12z' fill='%23a78bfa'/%3E%3C/svg%3E">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">▣</span>
+      <div>
+        <h1>Storder</h1>
+        <p id="tagline">Foto → Maße → Kiste</p>
+      </div>
+    </div>
+    <button id="btn-settings" class="icon-btn" title="Einstellungen" aria-label="Einstellungen">⚙</button>
+  </header>
+
+  <main id="app">
+    <!-- Start / Einlagern -->
+    <section id="view-capture" class="view active">
+      <div class="card upload-card">
+        <!-- 1) Hinweis -->
+        <div class="field">
+          <label for="hint"><span class="step-num">1</span> Hinweis (optional)</label>
+          <input id="hint" type="text" placeholder="z. B. Toaster, Kabelkiste, Werkzeug…" autocomplete="off">
+        </div>
+
+        <!-- 2) Auto-Analyse -->
+        <label class="toggle-row" for="auto-analyze">
+          <input id="auto-analyze" type="checkbox" checked>
+          <span class="toggle-text">
+            <strong><span class="step-num">2</span> Automatisch analysieren</strong>
+            <small>KI erkennt den Gegenstand und schlägt Maße, Gewicht und Beschreibung vor.</small>
+          </span>
+        </label>
+
+        <!-- 3) Foto -->
+        <label class="camera-target" for="photo-input">
+          <input id="photo-input" type="file" accept="image/*" capture="environment" hidden>
+          <img id="photo-preview" alt="" hidden>
+          <span id="photo-placeholder">
+            <span class="camera-icon" aria-hidden="true">📷</span>
+            <strong><span class="step-num">3</span> Foto vom Gegenstand</strong>
+            <small>Tippen, um die Kamera zu öffnen</small>
+          </span>
+        </label>
+
+        <p id="analyze-status" class="status" hidden></p>
+
+        <!-- unten: ohne KI selbst eingeben -->
+        <button id="btn-manual" class="ghost capture-skip" type="button">
+          Selbst eingeben – KI überspringen
+        </button>
+      </div>
+
+      <div id="result" class="card" hidden></div>
+    </section>
+
+    <!-- Kisten -->
+    <section id="view-bins" class="view">
+      <div class="view-head">
+        <h2>Kisten</h2>
+        <div class="row shrink">
+          <button class="small ghost view-toggle" data-view-mode type="button">Raster</button>
+          <button class="small primary" data-action="new-bin">+ Kiste</button>
+        </div>
+      </div>
+      <p class="muted" id="bins-summary"></p>
+      <div id="bins-list" class="list"></div>
+    </section>
+
+    <!-- Suche -->
+    <section id="view-search" class="view">
+      <div class="view-head">
+        <h2>Suche</h2>
+        <button class="small ghost view-toggle" data-view-mode type="button">Raster</button>
+      </div>
+      <div class="searchbar">
+        <input id="search-input" type="search" placeholder="Was suchst du?" autocomplete="off" enterkeyhint="search">
+        <button id="btn-search" class="primary small">Suchen</button>
+      </div>
+      <div id="search-results" class="list"></div>
+    </section>
+
+    <!-- Erinnerung -->
+    <section id="view-recall" class="view">
+      <div class="view-head">
+        <h2>Nutzt du das noch?</h2>
+        <button class="small ghost" data-action="reload-recall">Neu laden</button>
+      </div>
+      <p class="muted" id="recall-info"></p>
+      <div id="recall-list" class="list"></div>
+    </section>
+  </main>
+
+  <nav class="tabbar">
+    <button class="tab active" data-view="capture"><span>＋</span>Einlagern</button>
+    <button class="tab" data-view="bins"><span>▤</span>Kisten</button>
+    <button class="tab" data-view="search"><span>⌕</span>Suche</button>
+    <button class="tab" data-view="recall"><span>↻</span>Prüfen</button>
+  </nav>
+
+  <dialog id="dialog" class="sheet">
+    <!-- novalidate: eigene (deutsche) Fehlermeldungen statt Browser-Tooltips;
+         damit blockiert auch kein step-Konflikt das Schließen. -->
+    <form method="dialog" id="dialog-form" novalidate>
+      <div id="dialog-body"></div>
+      <div class="row sticky-actions">
+        <button value="cancel" class="ghost" type="submit" formnovalidate>Abbrechen</button>
+        <button value="ok" class="primary" type="submit" id="dialog-ok">Speichern</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="/app.js" type="module"></script>
+</body>
+</html>

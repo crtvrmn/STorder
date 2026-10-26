@@ -1,0 +1,59 @@
+# Storder – selfhosted Lagerkatalog mit Foto-Erkennung
+#
+# Start:  cp .env.example .env  (Key eintragen)  →  docker compose up -d
+# Aufruf: http://<IP-des-Servers>:8080  (im Heimnetz, z. B. vom Handy)
+
+services:
+  storder:
+    build: .
+    image: storder:latest
+    container_name: storder
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8080}:8080"
+    environment:
+      # --- KI (OpenRouter oder jeder OpenAI-kompatible Endpunkt) ---
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      LLM_BASE_URL: ${LLM_BASE_URL:-https://openrouter.ai/api/v1}
+      LLM_MODEL: ${LLM_MODEL:-google/gemini-2.5-flash}
+      LLM_VISION_MODEL: ${LLM_VISION_MODEL:-google/gemini-2.5-flash}
+      LLM_WEB_MODEL: ${LLM_WEB_MODEL:-google/gemini-2.5-flash}
+      LLM_WEB_SEARCH: ${LLM_WEB_SEARCH:-true}
+      LLM_WEB_SEARCH_ENGINE: ${LLM_WEB_SEARCH_ENGINE:-exa}
+      LLM_WEB_RESULTS: ${LLM_WEB_RESULTS:-4}
+
+      # --- Paperless-ngx im lokalen Netz (Rechnungen suchen) ---
+      PAPERLESS_URL: ${PAPERLESS_URL:-}
+      PAPERLESS_TOKEN: ${PAPERLESS_TOKEN:-}
+      PAPERLESS_USERNAME: ${PAPERLESS_USERNAME:-}
+      PAPERLESS_PASSWORD: ${PAPERLESS_PASSWORD:-}
+      PAPERLESS_RESULTS: ${PAPERLESS_RESULTS:-8}
+
+      # --- Erinnerung ("nutzt du das noch?") ---
+      RECALL_ENABLED: ${RECALL_ENABLED:-true}
+      RECALL_INTERVAL_DAYS: ${RECALL_INTERVAL_DAYS:-30}
+      RECALL_ITEMS_PER_RECALL: ${RECALL_ITEMS_PER_RECALL:-3}
+      RECALL_MIN_ITEM_AGE_DAYS: ${RECALL_MIN_ITEM_AGE_DAYS:-14}
+
+      # --- Sonstiges ---
+      APP_NAME: ${APP_NAME:-Storder}
+      TZ: ${TZ:-Europe/Berlin}
+      SEED_BOXES: ${SEED_BOXES:-true}
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-15}
+
+      # Persistenz: Datenbank + Fotos liegen im Volume
+      DATA_DIR: /data
+
+    volumes:
+      - storder-data:/data
+
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  storder-data:
+    name: storder-data

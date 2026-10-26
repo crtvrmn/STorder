@@ -1,0 +1,20 @@
+# Abhängigkeiten
+node_modules/
+
+# Lokale Daten: SQLite-Datenbank, Fotos, Rechnungen
+data/
+*.db
+*.db-wal
+*.db-shm
+photos/
+invoices/
+
+# Geheimnisse / Umgebung – niemals committen
+.env
+.env.*
+!.env.example
+
+# Entwicklung / temporär
+.scratch/
+*.log
+.DS_Store
