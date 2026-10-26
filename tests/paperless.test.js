@@ -250,3 +250,31 @@ test('Token-Modus ruft keinen Login auf', async () => {
   await client.searchDocuments({ query: 'x' });
   assert.equal(calls.filter((c) => String(c.url).includes('/api/token/')).length, 0);
 });
+
+test('getDocument: Metadaten einzeln laden (für Verlinkung)', async () => {
+  const calls = [];
+  const fetchImpl = async (target) => {
+    calls.push(String(target));
+    return new Response(JSON.stringify({
+      id: 7,
+      title: 'Rechnung Zelt 2023',
+      created: '2023-06-02',
+      correspondent: { name: 'Camping Shop' },
+      document_type: { name: 'Rechnung' },
+      tags: [{ name: 'Outdoor' }, 4],
+    }), { status: 200, headers: { 'content-type': 'application/json' } });
+  };
+  const config = loadConfig({ PAPERLESS_URL: 'http://paperless.local:8000', PAPERLESS_TOKEN: 't' });
+  const client = createPaperlessClient(config, { fetchImpl });
+  const doc = await client.getDocument(7);
+  assert.equal(calls[0], 'http://paperless.local:8000/api/documents/7/');
+  assert.equal(doc.id, 7);
+  assert.equal(doc.title, 'Rechnung Zelt 2023');
+  assert.equal(doc.correspondent, 'Camping Shop');
+  assert.deepEqual(doc.tags, ['Outdoor']);
+
+  const missing = createPaperlessClient(config, {
+    fetchImpl: async () => new Response('{}', { status: 404, headers: { 'content-type': 'application/json' } }),
+  });
+  await assert.rejects(() => missing.getDocument(99), (err) => err.code === 'PAPERLESS_NOT_FOUND');
+});

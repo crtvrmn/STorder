@@ -546,25 +546,24 @@ export function createApp({ config, db, llm, paperless }) {
       if (!Number.isInteger(documentId) || documentId <= 0) {
         throw new HttpError(400, 'Bitte eine Paperless-Dokument-ID angeben.');
       }
-      const doc = await paperlessClient.downloadDocument(documentId);
-      if (doc.buffer.length > config.upload.maxBytes) {
-        throw new HttpError(413, 'Paperless-Dokument ist zu groß.');
+      // Keine Kopie: nur prüfen, dass es das Dokument gibt, und einen Link speichern.
+      const doc = await paperlessClient.getDocument(documentId);
+      const base = String(config.paperless.url ?? '').replace(/\/+$/, '');
+      if (!base) throw new HttpError(503, 'PAPERLESS_URL ist nicht gesetzt.');
+      const link = `${base}/documents/${documentId}`;
+      // Eine evtl. vorher hochgeladene lokale Datei wird entfernt.
+      if (item.invoice_path) {
+        const previous = path.join(invoicesDir(config), path.basename(item.invoice_path));
+        if (fs.existsSync(previous)) fs.rmSync(previous, { force: true });
       }
-      const ext = invoiceExt(doc.contentType, doc.filename);
-      const fallbackExt = doc.contentType.includes('pdf') ? 'pdf' : doc.contentType.startsWith('image/') ? 'jpg' : null;
-      const finalExt = INVOICE_EXTS.has(ext) ? ext : fallbackExt;
-      if (!finalExt) throw new HttpError(400, 'Paperless-Dokument ist kein PDF/Bild.');
-      const previous = item.invoice_path ? path.join(invoicesDir(config), path.basename(item.invoice_path)) : null;
-      const name = `${id}-${Date.now().toString(36)}-${crypto.randomBytes(3).toString('hex')}.${finalExt}`;
-      fs.writeFileSync(path.join(invoicesDir(config), name), doc.buffer);
-      if (previous && fs.existsSync(previous)) fs.rmSync(previous, { force: true });
       const updated = setItemInvoice(db, id, {
-        path: name,
-        name: doc.filename || `Paperless ${documentId}`,
+        path: null,
+        name: doc.title || `Paperless ${documentId}`,
         source: 'paperless',
         ref: documentId,
+        link,
       });
-      res.json({ item: updated, document: { id: documentId, filename: doc.filename, bytes: doc.buffer.length } });
+      res.json({ item: updated, document: { id: documentId, title: doc.title, url: link } });
     }),
   );
 

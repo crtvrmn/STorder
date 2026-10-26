@@ -594,9 +594,9 @@ test('Originalrechnung: PDF hochladen, ansehen, ersetzen, löschen', async () =>
   } finally { await t.close(); }
 });
 
-test('Paperless: Status, Suche und Rechnung übernehmen', async () => {
-  const pdf = Buffer.from('%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n');
+test('Paperless: Status, Suche und Rechnung verlinken (keine Kopie)', async () => {
   const searches = [];
+  const fetchedDocs = [];
   const paperless = {
     isConfigured: true,
     authMode: 'token',
@@ -608,13 +608,20 @@ test('Paperless: Status, Suche und Rechnung übernehmen', async () => {
         { id: 8, title: 'Rechnung Zelt 2022', created: '2022-05-01', correspondent: null, document_type: null, tags: [] },
       ];
     },
-    async downloadDocument(id) {
-      assert.equal(id, 7);
-      return { buffer: pdf, contentType: 'application/pdf', filename: 'Rechnung_Zelt.pdf' };
+    async getDocument(id) {
+      fetchedDocs.push(id);
+      return {
+        id,
+        title: 'Rechnung Zelt 2023',
+        created: '2023-06-02',
+        correspondent: 'Camping Shop',
+        document_type: 'Rechnung',
+        tags: ['Outdoor'],
+      };
     },
   };
 
-  const t = await boot({}, null, paperless);
+  const t = await boot({ PAPERLESS_URL: 'http://192.168.1.50:8000' }, null, paperless);
   try {
     const status = await t.call('GET', '/api/paperless/status');
     assert.equal(status.status, 200);
@@ -642,17 +649,25 @@ test('Paperless: Status, Suche und Rechnung übernehmen', async () => {
     const custom = await t.call('GET', `/api/items/${item.id}/invoice/search?q=Camping%20Shop`);
     assert.equal(custom.json.query, 'Camping Shop');
 
-    // Rechnung übernehmen
+    // Rechnung verlinken (nichts herunterladen/kopieren)
     const attached = await t.call('POST', `/api/items/${item.id}/invoice/paperless`, { document_id: 7 });
     assert.equal(attached.status, 200);
+    assert.deepEqual(fetchedDocs, [7]);
     assert.equal(attached.json.item.invoice_source, 'paperless');
     assert.equal(attached.json.item.invoice_ref, '7');
-    assert.equal(attached.json.item.invoice_name, 'Rechnung_Zelt.pdf');
-    assert.match(attached.json.item.invoice_url, /invoice$/);
+    assert.equal(attached.json.item.invoice_name, 'Rechnung Zelt 2023');
+    assert.equal(attached.json.item.invoice_link, 'http://192.168.1.50:8000/documents/7');
+    assert.equal(attached.json.item.invoice_path, '');
+    assert.equal(attached.json.item.invoice_url, null);
+    assert.equal(attached.json.document.url, 'http://192.168.1.50:8000/documents/7');
 
-    const download = await fetch(t.base + attached.json.item.invoice_url);
-    assert.equal(download.status, 200);
-    assert.equal(download.headers.get('content-type'), 'application/pdf');
+    // Keine lokale Rechnungsdatei angelegt
+    const invoiceDir = path.join(t.config.dataDir, 'invoices');
+    const files = fs.existsSync(invoiceDir) ? fs.readdirSync(invoiceDir) : [];
+    assert.deepEqual(files, []);
+
+    // Der lokale Rechnungs-Endpunkt hat nichts zu liefern
+    assert.equal((await fetch(`${t.base}/api/items/${item.id}/invoice`)).status, 404);
 
     // ungültige ID
     const bad = await t.call('POST', `/api/items/${item.id}/invoice/paperless`, { document_id: 'abc' });
@@ -702,9 +717,16 @@ test('Paperless nur mit Login: App holt den Token selbst über /api/token/', asy
       }));
       return;
     }
-    if (req.url === '/api/documents/7/download/') {
-      res.writeHead(200, { 'content-type': 'application/pdf', 'content-disposition': 'attachment; filename="Rechnung_Toaster.pdf"' });
-      res.end(pdf);
+    if (req.url === '/api/documents/7/') {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({
+        id: 7,
+        title: 'Rechnung Toaster 2024',
+        created: '2024-03-16',
+        correspondent: { name: 'Elektro Shop' },
+        document_type: { name: 'Rechnung' },
+        tags: [{ name: 'Küche' }],
+      }));
       return;
     }
     res.writeHead(404); res.end('{}');
@@ -733,12 +755,10 @@ test('Paperless nur mit Login: App holt den Token selbst über /api/token/', asy
     const attached = await t.call('POST', `/api/items/${item.id}/invoice/paperless`, { document_id: 7 });
     assert.equal(attached.status, 200);
     assert.equal(attached.json.item.invoice_source, 'paperless');
-    assert.equal(attached.json.item.invoice_name, 'Rechnung_Toaster.pdf');
-
-    const download = await fetch(t.base + attached.json.item.invoice_url);
-    assert.equal(download.status, 200);
-    assert.equal(download.headers.get('content-type'), 'application/pdf');
-    // Token wird gecacht: Suche + Download lösen keinen zweiten Login aus
+    assert.equal(attached.json.item.invoice_name, 'Rechnung Toaster 2024');
+    assert.equal(attached.json.item.invoice_link, `http://127.0.0.1:${port}/documents/7`);
+    assert.equal(attached.json.item.invoice_path, '');
+    // Token wird gecacht: Suche + Metadaten lösen keinen zweiten Login aus
     assert.equal(tokenCalls, 1);
   } finally {
     await t.close();

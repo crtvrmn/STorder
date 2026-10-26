@@ -1324,7 +1324,7 @@ function itemCard(item, { compact = false } = {}) {
             ${[dims, info, `seit ${dateStr(item.created_at)}`].filter(Boolean).join(' · ')}
             ${item.purchase_price != null ? ` · ${(item.purchase_price).toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}` : ''}
             ${item.purchase_date ? ` · gekauft ${dateStr(item.purchase_date)}` : ''}
-            ${item.invoice_url ? ' · Rechnung' : ''}
+            ${(item.invoice_link || item.invoice_url) ? ' · Rechnung' : ''}
             ${item.photos?.length > 1 ? ` · ${item.photos.length} Fotos` : ''}
           </div>
           <div class="actions">
@@ -1621,8 +1621,9 @@ function renderItemDetail(item) {
           <img src="${esc(photoSrc(p, item))}" alt="" loading="lazy">
         </button>`).join('')}</div>`
     : '<div class="detail-gallery"><div class="item-thumb"></div></div>';
-  const invoice = item.invoice_url
-    ? `<a href="${esc(item.invoice_url)}" target="_blank" rel="noopener">📄 ${esc(item.invoice_name || 'Rechnung')}</a>`
+  const invoiceHref = item.invoice_link || item.invoice_url;
+  const invoice = invoiceHref
+    ? `<a href="${esc(invoiceHref)}" target="_blank" rel="noopener">📄 ${esc(item.invoice_name || 'Rechnung')}${item.invoice_link ? ' (Paperless)' : ''}</a>`
     : null;
 
   openDialog({
@@ -1823,12 +1824,14 @@ function renderItemEditor(item) {
 
       <div class="field">
         <label>Originalrechnung</label>
-        ${item.invoice_url ? `
+        ${(item.invoice_link || item.invoice_url) ? `
           <div class="row">
-            <a class="small ghost" href="${esc(item.invoice_url)}" target="_blank" rel="noopener">📄 ${esc(item.invoice_name || 'Rechnung ansehen')}</a>
+            <a class="small ghost" href="${esc(item.invoice_link || item.invoice_url)}" target="_blank" rel="noopener">📄 ${esc(item.invoice_name || 'Rechnung ansehen')}</a>
             <button type="button" class="small danger shrink" id="editor-remove-invoice">Entfernen</button>
           </div>
-          ${item.invoice_source === 'paperless' ? '<small class="muted">aus Paperless übernommen</small>' : ''}`
+          ${item.invoice_link
+            ? '<small class="muted">verlinkt mit Paperless (keine Kopie)</small>'
+            : (item.invoice_source === 'paperless' ? '<small class="muted">aus Paperless übernommen</small>' : '')}`
         : '<p class="muted">Noch keine Rechnung hinterlegt.</p>'}
         ${state.paperless?.configured
           ? '<button type="button" class="small primary" id="editor-paperless">🔎 In Paperless suchen</button>'
@@ -2066,7 +2069,7 @@ async function attachPaperlessInvoice(item, documentId, button) {
       body: { document_id: documentId },
     });
     closeDialog();
-    toast('Rechnung aus Paperless übernommen', 'ok');
+    toast('Mit Paperless verlinkt', 'ok');
     renderItemEditor(updated);
     refreshItemViews();
   } catch (err) {

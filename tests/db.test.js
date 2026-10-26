@@ -409,7 +409,7 @@ test('Migration: alte Datenbank bekommt die neuen Spalten', async () => {
   const binCols = db.prepare('PRAGMA table_info(bins)').all().map((r) => r.name);
   const itemCols = db.prepare('PRAGMA table_info(items)').all().map((r) => r.name);
   assert.ok(binCols.includes('full_marked_at'));
-  for (const col of ['purchase_date', 'purchase_price_cents', 'invoice_path', 'invoice_name']) {
+  for (const col of ['purchase_date', 'purchase_price_cents', 'invoice_path', 'invoice_name', 'invoice_link', 'quantity']) {
     assert.ok(itemCols.includes(col), `items.${col} fehlt`);
   }
   // und die neuen Felder funktionieren auf der migrierten DB

@@ -162,7 +162,9 @@ Umgebung gelesen.
    **Originalrechnung**:
    * **„In Paperless suchen“** durchsucht dein Paperless-ngx im LAN
      (Volltextsuche mit Name/Marke/Kaufjahr, Ergebnisliste mit Datum und
-     Korrespondent). Ein Tipp übernimmt das Original-PDF als Rechnung.
+     Korrespondent). Ein Tipp **verlinkt** das Dokument in Paperless
+     (`…/documents/<id>`) – es wird **keine Kopie** in Storder angelegt; die
+     Rechnung öffnet sich aus der App direkt in Paperless.
    * Alternativ Datei hochladen (PDF/JPG/PNG/WebP). Die Rechnung ist danach im
      Artikel verlinkt und direkt abrufbar.
 10. **Kisten** – Füllstand je Kiste als **Balkendiagramm mit Prozentwert**
@@ -304,7 +306,7 @@ betreiben (oder hinter VPN/Reverse-Proxy mit Auth).
 | `POST /api/items/:id/photos/:name/rotate` | Foto drehen (`{ direction: "left"\|"right" }` oder `{ degrees: 90\|180\|270 }`) |
 | `POST /api/items/:id/invoice` | Rechnung als Datei (`{ file, name }`) |
 | `GET /api/items/:id/invoice` | Rechnung ansehen (PDF/Bild) |
-| `POST /api/items/:id/invoice/paperless` | Paperless-Dokument übernehmen (`{ document_id }`) |
+| `POST /api/items/:id/invoice/paperless` | Paperless-Dokument verlinken (`{ document_id }`, keine Kopie) |
 | `GET /api/items/:id/invoice/search?q=` | Paperless durchsuchen |
 | `GET /api/paperless/status` | Paperless konfiguriert? |
 | `GET/PUT /api/settings` | Laufzeit-Einstellungen |

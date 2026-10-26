@@ -7,7 +7,7 @@ import path from 'node:path';
 import { normalizeDimensions, computeRequiredVolume } from '../lib/geometry.js';
 import { findFreePosition, analyzeBox, boxExtentsCm, parseAxes } from '../lib/placement.js';
 
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 /** Obergrenze für Fotos pro Gegenstand. */
 export const MAX_ITEM_PHOTOS = 12;
@@ -74,6 +74,7 @@ CREATE TABLE IF NOT EXISTS items (
   invoice_name TEXT,
   invoice_source TEXT,
   invoice_ref TEXT,
+  invoice_link TEXT,
   quantity INTEGER NOT NULL DEFAULT 1,
   ai_raw TEXT,
   keep_count INTEGER NOT NULL DEFAULT 0,
@@ -128,6 +129,7 @@ const COLUMN_MIGRATIONS = {
     invoice_name: 'TEXT',
     invoice_source: 'TEXT',
     invoice_ref: 'TEXT',
+    invoice_link: 'TEXT',
     quantity: 'INTEGER NOT NULL DEFAULT 1',
   },
 };
@@ -427,8 +429,9 @@ function rowToItem(row, bin = null) {
     purchase_price: row.purchase_price_cents != null ? Math.round(row.purchase_price_cents) / 100 : null,
     invoice_path: row.invoice_path ?? '',
     invoice_name: row.invoice_name ?? '',
-    invoice_source: row.invoice_source ?? (row.invoice_path ? 'upload' : null),
+    invoice_source: row.invoice_source ?? (row.invoice_path ? 'upload' : (row.invoice_link ? 'paperless' : null)),
     invoice_ref: row.invoice_ref ?? null,
+    invoice_link: row.invoice_link ?? null,
     invoice_url: row.invoice_path ? `/api/items/${row.id}/invoice` : null,
     quantity: Number(row.quantity) > 0 ? Number(row.quantity) : 1,
     keep_count: row.keep_count,
@@ -719,11 +722,25 @@ export function removeItemPhoto(db, id, photoPath) {
 }
 
 /** Hinterlegt die Originalrechnung (Dateiname im Rechnungs-Ordner + Anzeigename). */
-export function setItemInvoice(db, id, { path: file, name, source = 'upload', ref = null }) {
+/**
+ * Rechnung verknüpfen: entweder als lokale Datei (`path`) oder als Link in
+ * Paperless (`link`). Es wird immer nur eine Variante gespeichert.
+ */
+export function setItemInvoice(db, id, { path: file = null, name = '', source = 'upload', ref = null, link = null }) {
   const item = getItem(db, id);
   if (!item) throw new HttpError(404, 'Gegenstand nicht gefunden.');
-  db.prepare('UPDATE items SET invoice_path = ?, invoice_name = ?, invoice_source = ?, invoice_ref = ?, updated_at = ? WHERE id = ?')
-    .run(String(file), String(name ?? '').slice(0, 200) || null, source, ref == null ? null : String(ref), now(), id);
+  const hasLink = Boolean(link);
+  db.prepare(`UPDATE items SET invoice_path = ?, invoice_name = ?, invoice_source = ?, invoice_ref = ?,
+    invoice_link = ?, updated_at = ? WHERE id = ?`)
+    .run(
+      hasLink ? null : (file ? String(file) : null),
+      String(name ?? '').slice(0, 200) || null,
+      source,
+      ref == null ? null : String(ref),
+      hasLink ? String(link).slice(0, 500) : null,
+      now(),
+      id,
+    );
   return getItem(db, id);
 }
 
@@ -731,7 +748,8 @@ export function setItemInvoice(db, id, { path: file, name, source = 'upload', re
 export function clearItemInvoice(db, id) {
   const item = getItem(db, id);
   if (!item) throw new HttpError(404, 'Gegenstand nicht gefunden.');
-  db.prepare('UPDATE items SET invoice_path = NULL, invoice_name = NULL, invoice_source = NULL, invoice_ref = NULL, updated_at = ? WHERE id = ?').run(now(), id);
+  db.prepare(`UPDATE items SET invoice_path = NULL, invoice_name = NULL, invoice_source = NULL,
+    invoice_ref = NULL, invoice_link = NULL, updated_at = ? WHERE id = ?`).run(now(), id);
   return getItem(db, id);
 }
 
