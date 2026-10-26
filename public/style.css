@@ -371,7 +371,7 @@ button { font: inherit; cursor: pointer; }
 /* Rasteransicht (3 Spalten auf dem Handy) */
 .grid-items {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(var(--cols, 3), 1fr);
   gap: 8px;
 }
 .grid-items.grid-cols-2 {
@@ -519,7 +519,7 @@ button { font: inherit; cursor: pointer; }
   bottom: 0;
   z-index: 30;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 2px;
   padding: 6px 6px calc(6px + env(safe-area-inset-bottom, 0px));
   background: color-mix(in srgb, var(--bg-soft) 92%, transparent);
@@ -847,3 +847,21 @@ details summary { cursor: pointer; color: var(--muted); font-size: 0.84rem; }
 .cat-row input { flex: 1 1 auto; }
 .cat-row .small { flex: 0 0 auto; }
 .cat-row button[disabled] { opacity: 0.35; }
+
+/* Suche: volle Breite am Desktop + Zoom-Regler (3–8 Kacheln) */
+body.view-search-active main { max-width: none; }
+.zoom-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.76rem;
+  color: var(--muted);
+}
+.zoom-control input[type="range"] { width: 110px; accent-color: var(--accent); }
+.zoom-control output { min-width: 1ch; font-weight: 700; color: var(--text); }
+@media (max-width: 699px) {
+  .zoom-control { display: none; }
+}
+@media (min-width: 700px) {
+  body.view-search-active main { padding-left: 20px; padding-right: 20px; }
+}

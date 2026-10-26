@@ -29,6 +29,12 @@ const state = {
   hkChecked: 0,
   editorItemId: null,
   taxonomy: [],
+  searchCols: (() => {
+    const stored = Number(localStorage.getItem('storder_search_cols'));
+    if (Number.isFinite(stored) && stored >= 3) return Math.min(stored, 8);
+    return window.innerWidth >= 1000 ? 5 : 3;
+  })(),
+  inboxCount: 0,
 };
 
 /* ------------------------------- Helfer --------------------------------- */
@@ -143,8 +149,10 @@ function showView(name, { push = true } = {}) {
   if (name === 'inbox') loadInbox();
   if (name === 'housekeeping') loadHousekeeping();
   if (name === 'recall') loadRecall();
+  document.body.classList.toggle('view-search-active', name === 'search');
   if (name === 'search') {
     $('#search-input').focus();
+    syncSearchZoom();
     // Kategorien/Zähler frisch laden, dann den Katalog anzeigen.
     loadCategories();
     runSearch();
@@ -206,11 +214,21 @@ async function openAppSettings() {
 
 /* ------------------------- Einstellungen-Menü -------------------------- */
 
-function openSettingsMenu() {
+async function openSettingsMenu() {
+  // Posteingang-Zähler frisch holen (Badge steckt im Menü).
+  try {
+    const data = await api('/api/inbox');
+    state.inboxCount = data.items.length;
+  } catch { /* offline: alten Zähler nutzen */ }
   openChoiceSheet({
     title: 'Einstellungen',
     cancelLabel: 'Schließen',
     choices: [
+      {
+        label: `📥 Posteingang${state.inboxCount ? ` (${state.inboxCount})` : ''}`,
+        hint: 'Schnell erfasste Artikel einlagern',
+        onSelect: () => showView('inbox'),
+      },
       {
         label: '🧹 Aufräumen',
         hint: 'Dichte prüfen und ähnliche Artikel zusammenlegen',
@@ -340,6 +358,24 @@ async function openCategoryManager() {
 }
 
 $('#btn-settings').addEventListener('click', openSettingsMenu);
+
+$('#search-zoom').addEventListener('input', (event) => {
+  const cols = Math.min(Math.max(Number(event.target.value) || 3, 3), 8);
+  state.searchCols = cols;
+  localStorage.setItem('storder_search_cols', String(cols));
+  $('#search-zoom-value').textContent = String(cols);
+  if (document.querySelector('#view-search').classList.contains('active')) runSearch();
+});
+
+let searchResizeTimer = null;
+window.addEventListener('resize', () => {
+  clearTimeout(searchResizeTimer);
+  searchResizeTimer = setTimeout(() => {
+    if (!document.querySelector('#view-search').classList.contains('active')) return;
+    syncSearchZoom();
+    runSearch();
+  }, 150);
+});
 
 /* -------------------------------- Dialog -------------------------------- */
 
@@ -1616,9 +1652,24 @@ function itemGridCard(item) {
 }
 
 /** Rendert Artikel als Liste oder Raster (je nach Ansicht). */
-function renderItemCollection(items, host, { compact = false } = {}) {
+function effectiveSearchCols() {
+  if (window.innerWidth < 700) return 3;
+  return Math.min(Math.max(state.searchCols || 5, 3), 8);
+}
+
+function syncSearchZoom() {
+  const input = $('#search-zoom');
+  const output = $('#search-zoom-value');
+  const cols = effectiveSearchCols();
+  if (input) input.value = String(cols);
+  if (output) output.textContent = String(cols);
+}
+
+function renderItemCollection(items, host, { compact = false, cols = null } = {}) {
   if (state.viewMode === 'grid') {
-    host.className = `grid-items${state.gridCols === 2 ? ' grid-cols-2' : ''}`;
+    const columns = cols ?? state.gridCols;
+    host.className = `grid-items grid-cols-${columns}`;
+    host.style.setProperty('--cols', String(columns));
     host.innerHTML = items.map(itemGridCard).join('');
   } else {
     host.className = 'list';
@@ -1677,12 +1728,13 @@ function readFileAsDataUrl(file) {
 /* ------------------------------ Posteingang ----------------------------- */
 
 async function updateInboxBadge(count) {
-  const el = $('#inbox-count');
-  if (!el) return;
   let n = count;
   if (n == null) {
     try { n = (await api('/api/inbox')).items.length; } catch { return; }
   }
+  state.inboxCount = n;
+  const el = $('#inbox-count');
+  if (!el) return; // Zähler steckt jetzt im Einstellungen-Menü
   el.textContent = String(n);
   el.hidden = n === 0;
 }
@@ -2471,7 +2523,7 @@ async function runSearch() {
       host.innerHTML = `<p class="muted">${query || state.categoryFilter.size ? 'Nichts gefunden.' : 'Noch nichts eingelagert.'}</p>`;
       return;
     }
-    renderItemCollection(items, host);
+    renderItemCollection(items, host, { cols: effectiveSearchCols() });
   } catch (err) {
     host.innerHTML = `<p class="status error">${esc(err.message)}</p>`;
   }

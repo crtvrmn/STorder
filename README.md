@@ -22,8 +22,8 @@ Posteingang und werden später am PC oder Handy in Ruhe durchgesehen, ergänzt u
 automatisch oder manuell eingelagert. Alle Bilder werden auf **max. 1000 px**
 verkleinert und als **WebP** gespeichert.
 
-**Zahnrad oben rechts → Einstellungen** bündelt Aufräumen, Prüfen und die
-Kategorie-Verwaltung (unten bleiben nur Einlagern, Posteingang, Kisten, Suche).
+**Zahnrad oben rechts → Einstellungen** bündelt **Posteingang**, Aufräumen,
+Prüfen und die Kategorie-Verwaltung (unten bleiben nur Einlagern, Kisten, Suche).
 **Aufräumen** hilft beim Sortieren: Es findet ähnliche Artikel in
 verschiedenen Kisten („ESP32 in A1, ähnlicher in K1 – zusammenlegen?") und prüft
 per einfacher Logik die **Dichte** (Gewicht ÷ Volumen): schwerer als Blei
@@ -156,8 +156,8 @@ Umgebung gelesen.
    (gleicher Name in derselben Kiste innerhalb von 10 Sekunden wird abgelehnt). Passt nichts, schlägt Storder eine größere Kiste vor
    (mit Mindestvolumen).
 7. **Posteingang** – für Stapel: Foto wählen und **„In den Posteingang
-   (schnell)"** tippen, ohne Formular. Der Tab **Posteingang** zeigt alle noch
-   nicht eingelagerten Artikel (Badge mit Anzahl); dort gibt es pro Artikel
+   (schnell)"** tippen, ohne Formular. **Zahnrad → Posteingang** zeigt alle noch
+   nicht eingelagerten Artikel (mit Anzahl); dort gibt es pro Artikel
    **Einlagern**, **Bearbeiten** und **„Alle einlagern"** für den ganzen Stapel.
    Die KI-Erkennung läuft im Hintergrund weiter, während du die Kiste einräumst.
 
@@ -208,10 +208,11 @@ Umgebung gelesen.
    **Kiste entfernen** fragt, ob der Inhalt erhalten bleiben soll (Gegenstände
    sind danach „ohne Kiste") oder **mit der Kiste gelöscht** wird (inkl. Fotos
    und Rechnungen).
-12. **Ansicht umschalten** – **Raster ist Standard** (3 Kacheln pro Reihe); der
-   Knopf **„3/Reihe"** schaltet auf **2 pro Reihe** um (wird gemerkt), der
-   Knopf **„Liste"** auf die Listenansicht. Gilt für Kisten-Inhalt, Suche und
-   Posteingang.
+12. **Ansicht umschalten** – **Raster ist Standard**. In der **Suche** gibt es
+   am Desktop einen **Zoom-Regler (3–8 Kacheln pro Reihe)** und die Suche nutzt
+   die **volle Fensterbreite**; auf dem Handy sind es 3 Spalten. Bei
+   Kisten-Inhalt/Posteingang schaltet **„3/Reihe"** auf **2 pro Reihe** um
+   (wird gemerkt), **„Liste"** auf die Listenansicht.
 13. **Artikel ansehen & bearbeiten** – ein Tipp auf Karte oder Kachel öffnet die
    **Ansicht**: große Fotos (antippen = Vollbild), alle Daten, Rechnungslink.
    Erst das **Stift-Symbol ✎** wechselt in den Bearbeiten-Modus (Beschreibung,
@@ -221,7 +222,9 @@ Umgebung gelesen.
 14. **Suche** – findet über Name, Beschreibung, Marke, Kategorien, Kisten-Code
    und Ort (z. B. „A23“ oder „Werkstatt“). Über die **Kategorie-Chips** (mit
    Anzahl) lässt sich der Bestand filtern, auch mehrere Kategorien gleichzeitig;
-   „Alle" hebt den Filter auf.
+   „Alle" hebt den Filter auf. Am Desktop lässt sich die Trefferzahl pro Reihe
+   über den **Zoom-Schieberegler (3–8)** einstellen; die Suchansicht nutzt die
+   volle Fensterbreite.
 15. **Prüfen** – **Zahnrad → Einstellungen → Prüfen**: nach dem eingestellten Zeitraum erscheinen zufällige
    Gegenstände: *Behalte ich*, *Nutze ich nicht*, *Aussortieren* oder
    *Nicht gefunden*. Aussortierte wandern aus dem Bestand.
