@@ -80,6 +80,8 @@ const route = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).ca
 /* ------------------------------- Fotos ---------------------------------- */
 
 const PHOTO_RE = /^[a-z0-9][a-z0-9-]{0,60}\.(jpg|jpeg|png|webp)$/i;
+const IMAGE_MIME_BY_EXT = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp' };
+const imageMime = (file) => IMAGE_MIME_BY_EXT[path.extname(String(file)).replace('.', '').toLowerCase()] ?? 'application/octet-stream';
 const INVOICE_EXTS = new Set(['pdf', 'jpg', 'jpeg', 'png', 'webp']);
 const MIME_BY_EXT = {
   pdf: 'application/pdf',
@@ -135,8 +137,9 @@ function invoiceExt(mime, name) {
 }
 
 /**
- * Verkleinert das Foto (spart Tokens/Bandbreite), richtet es nach EXIF aus und
- * speichert es als JPEG. Liefert Dateiname + Data-URL für das LLM.
+ * Verkleinert das Foto (max. 1000 px pro Seite), richtet es nach EXIF aus und
+ * speichert es als WebP. Fürs LLM gibt es zusätzlich eine JPEG-Data-URL, weil
+ * nicht jeder Vision-Endpunkt WebP akzeptiert.
  */
 async function preparePhoto(config, input) {
   const raw = decodeImage(input);
@@ -144,18 +147,21 @@ async function preparePhoto(config, input) {
     throw new HttpError(413, `Bild ist zu groß (max. ${Math.round(config.upload.maxBytes / 1024 / 1024)} MB).`);
   }
   const maxSide = config.llm.maxImageDimension;
-  const jpeg = await sharp(raw)
+  const resized = await sharp(raw)
     .rotate()
     .resize({ width: maxSide, height: maxSide, fit: 'inside', withoutEnlargement: true })
-    .jpeg({ quality: 82, mozjpeg: true })
     .toBuffer();
-  const name = `${Date.now().toString(36)}-${crypto.randomBytes(4).toString('hex')}.jpg`;
-  fs.writeFileSync(path.join(photosDir(config), name), jpeg);
+  const [webp, jpeg] = await Promise.all([
+    sharp(resized).webp({ quality: 80 }).toBuffer(),
+    sharp(resized).jpeg({ quality: 85, mozjpeg: true }).toBuffer(),
+  ]);
+  const name = `${Date.now().toString(36)}-${crypto.randomBytes(4).toString('hex')}.webp`;
+  fs.writeFileSync(path.join(photosDir(config), name), webp);
   return {
     name,
     path: `/api/photos/${name}`,
     imageDataUrl: `data:image/jpeg;base64,${jpeg.toString('base64')}`,
-    bytes: jpeg.length,
+    bytes: webp.length,
   };
 }
 
@@ -286,7 +292,7 @@ export function createApp({ config, db, llm, paperless }) {
     const file = path.join(photosDir(config), name);
     if (!fs.existsSync(file)) throw new HttpError(404, 'Foto fehlt.');
     res.setHeader('Cache-Control', 'no-store');
-    res.type('image/jpeg').sendFile(file);
+    res.type(imageMime(name)).sendFile(file);
   });
 
   app.delete('/api/bins/:id/photo', (req, res) => {
@@ -703,6 +709,64 @@ export function createApp({ config, db, llm, paperless }) {
     }),
   );
 
+  /* ------------------------------ Posteingang --------------------------- */
+
+  app.get('/api/inbox', (req, res) => {
+    const items = listItems(db, { status: 'stored', limit: 500 }).filter((it) => !it.bin_id);
+    res.json({ items, count: items.length });
+  });
+
+  /** Schnell-Erfassung: Foto rein, Artikel in den Posteingang, Analyse später. */
+  app.post(
+    '/api/inbox',
+    route(async (req, res) => {
+      const body = req.body ?? {};
+      const photo = await preparePhoto(config, body.image ?? body.photo);
+      const hint = typeof body.hint === 'string' ? body.hint.trim().slice(0, 80) : '';
+      const now = new Date();
+      const fallback = `Foto ${now.toLocaleDateString('de-DE')}, ${now.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}`;
+      const item = createItem(db, {
+        name: hint || fallback,
+        photo_path: photo.path,
+        photos: [photo.path],
+      });
+      res.status(201).json({
+        item,
+        image_data_url: photo.imageDataUrl,
+        auto_named: !hint,
+        inbox_count: listItems(db, { status: 'stored', limit: 500 }).filter((it) => !it.bin_id).length,
+      });
+    }),
+  );
+
+  /** Stapelweise einlagern (optional nur bestimmte IDs). */
+  app.post(
+    '/api/inbox/assign',
+    route(async (req, res) => {
+      const ids = Array.isArray(req.body?.ids)
+        ? req.body.ids.map(Number).filter((n) => Number.isInteger(n) && n > 0)
+        : null;
+      const inbox = listItems(db, { status: 'stored', limit: 500 })
+        .filter((it) => !it.bin_id && (!ids || ids.includes(it.id)));
+      const assigned = [];
+      const failed = [];
+      for (const item of inbox) {
+        const suggestion = suggestFor({ ...item });
+        if (!suggestion.best) {
+          failed.push({ id: item.id, name: item.name, reason: suggestion.reason_text });
+          continue;
+        }
+        try {
+          const moved = moveItem(db, item.id, suggestion.best.box.id);
+          assigned.push({ id: item.id, name: moved.name, bin: moved.bin?.code ?? null });
+        } catch (err) {
+          failed.push({ id: item.id, name: item.name, reason: err.message });
+        }
+      }
+      res.json({ assigned, failed, remaining: inbox.length - assigned.length });
+    }),
+  );
+
   /* ------------------------------ Erinnerung ---------------------------- */
 
   function recallSettings(cfg) {
@@ -722,7 +786,8 @@ export function createApp({ config, db, llm, paperless }) {
         res.json({ enabled: false, items: [], candidates: 0, eligible: 0 });
         return;
       }
-      const items = listItems(db).map(toRecallItem);
+      // Artikel im Posteingang (noch ohne Kiste) werden nicht zur Prüfung vorgeschlagen.
+      const items = listItems(db).filter((it) => it.bin_id).map(toRecallItem);
       const selection = selectRecallItems({ items, settings: recallSettings(cfg) });
       res.json({
         enabled: true,
@@ -809,7 +874,7 @@ export function createApp({ config, db, llm, paperless }) {
     if (!fs.existsSync(file)) throw new HttpError(404, 'Foto nicht gefunden.');
     // Fotos ändern sich (Drehen) -> nie aus dem Browser-Cache bedienen.
     res.setHeader('Cache-Control', 'no-store');
-    res.type('image/jpeg').sendFile(file);
+    res.type(imageMime(name)).sendFile(file);
   });
 
   /** Foto um 90° drehen (Richtung: left/right) bzw. 180°/270°. */
@@ -835,7 +900,15 @@ export function createApp({ config, db, llm, paperless }) {
         : requested === 180
           ? 180
           : 90;
-      const rotated = await sharp(file).rotate(degrees).jpeg({ quality: 82, mozjpeg: true }).toBuffer();
+      const ext = path.extname(file).replace('.', '').toLowerCase();
+      // Datei als Buffer lesen: sharps Datei-Cache könnte bei schnell
+      // aufeinanderfolgenden Drehungen noch den alten Stand liefern.
+      const pipeline = sharp(fs.readFileSync(file)).rotate(degrees);
+      const rotated = ext === 'webp'
+        ? await pipeline.webp({ quality: 80 }).toBuffer()
+        : ext === 'png'
+          ? await pipeline.png().toBuffer()
+          : await pipeline.jpeg({ quality: 82, mozjpeg: true }).toBuffer();
       fs.writeFileSync(file, rotated);
       res.json({ item: touchItem(db, id), rotation: degrees });
     }),

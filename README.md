@@ -16,6 +16,12 @@ aus Paperless-ngx im lokalen Netz** verknüpfen (oder als Datei hochladen) und
 Beim Einlagern prüft Storder kurz, ob es den Artikel (oder einen ähnlichen) schon
 gibt, und schlägt dessen Kiste vor – z. B. „Xbox Controller“ für „Xbox Zubehör“.
 
+Für **Stapel-Erfassung** gibt es den **Posteingang**: Foto machen → „In den
+Posteingang (schnell)" → nächstes Foto. Die Artikel liegen dann ohne Kiste im
+Posteingang und werden später am PC oder Handy in Ruhe durchgesehen, ergänzt und
+automatisch oder manuell eingelagert. Alle Bilder werden auf **max. 1000 px**
+verkleinert und als **WebP** gespeichert.
+
 ```
 Handy-Foto ─► LLM (Vision)  ─┐
               LLM (Websuche) ─┴─► Beschreibung + Maße + Gewicht
@@ -92,6 +98,7 @@ Alles über Umgebungsvariablen (siehe `.env.example`). Die wichtigsten:
 | `SEED_BOXES` | `true` | beim ersten Start 6 Beispielkisten anlegen |
 | `DATA_DIR` | `./data` (Docker: `/data`) | Datenbank + Fotos |
 | `PORT` / `HOST` | `8080` / `0.0.0.0` | HTTP-Port und Bind-Adresse |
+| `LLM_MAX_IMAGE_DIM` | `1000` | max. Bildkante in px (Speicherung als WebP) |
 | `TZ` | `Europe/Berlin` | Zeitzone für Datumsanzeigen |
 
 Modell und Erinnerungs-Intervall lassen sich zusätzlich **in der App** unter
@@ -107,7 +114,7 @@ Umgebung gelesen.
    **1) Hinweis** (optional, z. B. „Toaster"), **2) Automatisch analysieren**
    (Häkchen, standardmäßig an), **3) Foto** – Kamera öffnen – und ganz unten
    **„Selbst eingeben – KI überspringen"**.
-2. Das Foto wird **schon auf dem Handy verkleinert** (max. 1600 px, JPEG), damit
+2. Das Foto wird **schon auf dem Handy verkleinert** (max. 1000 px, WebP), damit
    keine 50-MP-Datei übertragen oder analysiert wird. Das Formular ist **sofort
    bedienbar**, während die Analyse im Hintergrund läuft – Name, Maße und
    Volumen kannst du schon eintragen; Ergebnisse werden nur in noch leere Felder
@@ -133,11 +140,16 @@ Umgebung gelesen.
    Suche auffindbar. Ein Doppelklick-Schutz verhindert versehentliche Dubletten
    (gleicher Name in derselben Kiste innerhalb von 10 Sekunden wird abgelehnt). Passt nichts, schlägt Storder eine größere Kiste vor
    (mit Mindestvolumen).
-7. **Rotes ✕** (statt „Verwerfen“) öffnet drei große Optionen:
+7. **Posteingang** – für Stapel: Foto wählen und **„In den Posteingang
+   (schnell)"** tippen, ohne Formular. Der Tab **Posteingang** zeigt alle noch
+   nicht eingelagerten Artikel (Badge mit Anzahl); dort gibt es pro Artikel
+   **Einlagern**, **Bearbeiten** und **„Alle einlagern"** für den ganzen Stapel.
+   Die KI-Erkennung läuft im Hintergrund weiter, während du die Kiste einräumst.
+8. **Rotes ✕** (statt „Verwerfen“) öffnet drei große Optionen:
    **Passt nicht** (Maße prüfen, Kiste ausschließen, neu suchen),
    **Kiste voll** (Kiste ausschließen, anderen Platz suchen) und
    **Verwerfen** (Eingabe komplett verwerfen).
-8. **Artikel bearbeiten** – in Suche oder Kisteninhalt auf *Bearbeiten*:
+9. **Artikel bearbeiten** – in Suche oder Kisteninhalt auf *Bearbeiten*:
    Beschreibung, Kategorie, Marke, **Kaufdatum**, **Kaufpreis (optional)**,
    weitere **Fotos** (mehrere, jederzeit ergänz-, **dreh- und löschbar**) sowie die
    **Originalrechnung**:
@@ -146,7 +158,7 @@ Umgebung gelesen.
      Korrespondent). Ein Tipp übernimmt das Original-PDF als Rechnung.
    * Alternativ Datei hochladen (PDF/JPG/PNG/WebP). Die Rechnung ist danach im
      Artikel verlinkt und direkt abrufbar.
-9. **Kisten** – Füllstand je Kiste als **Balkendiagramm mit Prozentwert**
+10. **Kisten** – Füllstand je Kiste als **Balkendiagramm mit Prozentwert**
    (grün < 75 %, orange ab 75 %, rot ab 95 %), Inhalt ansehen, umräumen,
    bearbeiten. Ist eine Kiste physisch voll (auch wenn rechnerisch noch Luft
    ist), lässt sie sich direkt in der Liste über **„Kiste voll"** markieren –
@@ -155,24 +167,24 @@ Umgebung gelesen.
    dort nicht mehr vorgeschlagen (nur noch Kleinteile bis 2 l). Dasselbe geht
    im Bearbeiten-Dialog über den **Füllstatus**. Im Dialog lässt sich außerdem
    ein **Foto der Kiste (außen)** hinterlegen, das als Vorschaubild erscheint.
+   Eine als **voll** markierte Kiste wird künftig nur noch für **sehr kleine
+   Gegenstände** (bis 2 l) vorgeschlagen; über *Wieder freigeben* ist die
+   Markierung jederzeit aufhebbar.
    **Kiste entfernen** fragt, ob der Inhalt erhalten bleiben soll (Gegenstände
    sind danach „ohne Kiste") oder **mit der Kiste gelöscht** wird (inkl. Fotos
    und Rechnungen).
-10. **Ansicht umschalten** – in Kisten-Inhalt und Suche wechselt der Knopf
+11. **Ansicht umschalten** – in Kisten-Inhalt und Suche wechselt der Knopf
    zwischen **Liste** und **Raster** (3 Spalten auf dem Handy, mehr auf großen
    Bildschirmen).
-11. **Artikel ansehen & bearbeiten** – ein Tipp auf Karte oder Kachel öffnet die
+12. **Artikel ansehen & bearbeiten** – ein Tipp auf Karte oder Kachel öffnet die
    **Ansicht**: große Fotos (antippen = Vollbild), alle Daten, Rechnungslink.
    Erst das **Stift-Symbol ✎** wechselt in den Bearbeiten-Modus (Beschreibung,
    Kategorie, Marke, **Maße/Gewicht/Form**, Stückzahl, Kaufdaten, Fotos,
    Rechnung). Geänderte Maße werden in der Kiste **neu platziert**; passt der
    Gegenstand nicht mehr, bleibt alles unverändert und es erscheint ein Hinweis.
-   Eine als **voll** markierte Kiste wird künftig nur noch für **sehr kleine
-   Gegenstände** (bis 2 l) vorgeschlagen; über *Wieder freigeben* ist die
-   Markierung jederzeit aufhebbar.
-11. **Suche** – findet über Name, Beschreibung, Marke, Kategorie, Kisten-Code und
+13. **Suche** – findet über Name, Beschreibung, Marke, Kategorie, Kisten-Code und
    Ort (z. B. „A23“ oder „Werkstatt“).
-13. **Prüfen** – nach dem eingestellten Zeitraum erscheinen zufällige
+14. **Prüfen** – nach dem eingestellten Zeitraum erscheinen zufällige
    Gegenstände: *Behalte ich*, *Nutze ich nicht*, *Aussortieren* oder
    *Nicht gefunden*. Aussortierte wandern aus dem Bestand.
 
@@ -271,6 +283,9 @@ betreiben (oder hinter VPN/Reverse-Proxy mit Auth).
 | `GET /api/recall` | fällige Gegenstände zur Prüfung |
 | `POST /api/recall/:id` | `{ verdict: keep\|unused\|discard\|not_found }` |
 | `POST/DELETE /api/bins/:id/full` | Kiste als voll markieren / freigeben |
+| `GET /api/inbox` | Artikel ohne Kiste (Posteingang) |
+| `POST /api/inbox` | Schnell-Erfassung `{ image, hint? }` → Artikel im Posteingang |
+| `POST /api/inbox/assign` | Stapel einlagern (`{ ids? }`, leer = alle) |
 | `GET /api/items/similar?q=&category=` | ähnliche vorhandene Artikel + Kiste |
 | `POST /api/items/:id/photos` | weitere Fotos (`{ images: [dataURL…] }`) |
 | `POST/GET/DELETE /api/bins/:id/photo` | Kistenfoto setzen / abrufen / entfernen |
@@ -303,8 +318,9 @@ curl -X POST http://localhost:8080/api/suggest \
   `DATA_DIR`. Paperless wird nur gelesen (Suche + Dokument-Download).
 * Kein Login. Für Zugriff von außerhalb: Reverse-Proxy mit HTTPS/Basic-Auth
   oder VPN davor. Für die Kamera am Handy ist HTTP im Heimnetz ausreichend.
-* Uploads werden serverseitig per `sharp` verkleinert (max. 1536 px) und als
-  JPEG gespeichert; das Original wird nicht behalten.
+* Uploads werden serverseitig per `sharp` auf **max. 1000 px** verkleinert und
+  als **WebP** gespeichert (fürs LLM zusätzlich JPEG, weil nicht jeder Anbieter
+  WebP akzeptiert); das Original wird nicht behalten.
 
 ---
 

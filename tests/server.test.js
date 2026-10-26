@@ -308,17 +308,18 @@ test('Foto-Pipeline: sharp verkleinert, LLM-Antwort wird übernommen, Foto abruf
     assert.equal(a.dims_cm.length_cm, 31);
     assert.equal(a.weight_g, 1700);
     assert.ok(a.volume_liters > 0);
-    assert.match(res.json.photo.path, /^\/api\/photos\/[a-z0-9-]+\.jpg$/);
+    assert.match(res.json.photo.path, /^\/api\/photos\/[a-z0-9-]+\.webp$/);
     assert.ok(calls[0].hint.includes('Küchengerät'));
 
     // Foto liegt verkleinert auf der Platte und ist abrufbar
     const photoRes = await fetch(t.base + res.json.photo.path);
     assert.equal(photoRes.status, 200);
-    assert.equal(photoRes.headers.get('content-type'), 'image/jpeg');
+    assert.equal(photoRes.headers.get('content-type'), 'image/webp');
     const stored = Buffer.from(await photoRes.arrayBuffer());
     assert.ok(stored.length > 500);
     const meta = await sharp(stored).metadata();
-    assert.ok(meta.width <= 1536 && meta.height <= 1536);
+    assert.equal(meta.format, 'webp');
+    assert.ok(meta.width <= 1000 && meta.height <= 1000, `${meta.width}x${meta.height}`);
 
     // Ergebnis einlagern
     const bin = (await t.call('POST', '/api/bins', { code: 'A1', dims_cm: { length_cm: 60, width_cm: 40, height_cm: 40 } })).json.bin;
@@ -527,7 +528,7 @@ test('Mehrere Fotos nachträglich hinzufügen und entfernen', async () => {
     // Foto-Datei ist abrufbar
     const photoRes = await fetch(t.base + added.json.added[0]);
     assert.equal(photoRes.status, 200);
-    assert.equal(photoRes.headers.get('content-type'), 'image/jpeg');
+    assert.equal(photoRes.headers.get('content-type'), 'image/webp');
 
     // Limit greift
     const tooMany = await t.call('POST', `/api/items/${item.id}/photos`, {
@@ -760,20 +761,20 @@ test('Foto drehen: Maße tauschen, Datei wird ersetzt, 404 bei fremdem Foto', as
     const photoPath = added.json.item.photos[0];
     const name = photoPath.split('/').pop();
 
-    const before = await sharp(path.join(t.config.dataDir, 'photos', name)).metadata();
+    const before = await sharp(fs.readFileSync(path.join(t.config.dataDir, 'photos', name))).metadata();
     assert.equal(before.width, 400);
     assert.equal(before.height, 200);
 
     const rotated = await t.call('POST', `/api/items/${item.id}/photos/${name}/rotate`, { direction: 'right' });
     assert.equal(rotated.status, 200);
     assert.equal(rotated.json.rotation, 90);
-    const after = await sharp(path.join(t.config.dataDir, 'photos', name)).metadata();
+    const after = await sharp(fs.readFileSync(path.join(t.config.dataDir, 'photos', name))).metadata();
     assert.equal(after.width, 200, 'Breite nach rechts drehen');
     assert.equal(after.height, 400, 'Höhe nach rechts drehen');
 
     // 180° tauscht nicht, dreht aber das Bild
     await t.call('POST', `/api/items/${item.id}/photos/${name}/rotate`, { degrees: 180 });
-    const after180 = await sharp(path.join(t.config.dataDir, 'photos', name)).metadata();
+    const after180 = await sharp(fs.readFileSync(path.join(t.config.dataDir, 'photos', name))).metadata();
     assert.equal(after180.width, 200);
     assert.equal(after180.height, 400);
 
@@ -899,9 +900,12 @@ test('Kistenfoto: hochladen, abrufen, entfernen, mit Kiste löschen', async () =
 
     const res = await fetch(t.base + uploaded.json.bin.photo_url);
     assert.equal(res.status, 200);
-    assert.equal(res.headers.get('content-type'), 'image/jpeg');
+    assert.equal(res.headers.get('content-type'), 'image/webp');
     const stored = Buffer.from(await res.arrayBuffer());
-    assert.ok(stored.length > 300);
+    assert.ok(stored.length > 100);
+    const binPhotoMeta = await sharp(stored).metadata();
+    assert.equal(binPhotoMeta.format, 'webp');
+    assert.equal(binPhotoMeta.width, 320);
 
     const removed = await t.call('DELETE', `/api/bins/${bin.id}/photo`);
     assert.equal(removed.json.bin.photo_url, null);
@@ -995,5 +999,78 @@ test('Maße ändern: neu platzieren, Volumen neu berechnen, 409 wenn zu groß', 
     assert.equal(updated.status, 200);
     assert.equal(updated.json.item.dims_cm.length_cm, 25);
     assert.equal(updated.json.item.bin_id, null);
+  } finally { await t.close(); }
+});
+
+test('Posteingang: Schnell-Erfassung, Liste, Stapel-Einlagerung', async () => {
+  const { default: sharp } = await import('sharp');
+  const jpeg = (await sharp({
+    create: { width: 800, height: 600, channels: 3, background: { r: 30, g: 120, b: 90 } },
+  }).jpeg().toBuffer()).toString('base64');
+
+  const t = await boot({ SEED_BOXES: 'true' });
+  try {
+    // 1) Schnell-Erfassung ohne Formular
+    const quick = await t.call('POST', '/api/inbox', { image: `data:image/jpeg;base64,${jpeg}`, hint: 'Bohrmaschine' });
+    assert.equal(quick.status, 201);
+    assert.equal(quick.json.item.bin_id, null);
+    assert.equal(quick.json.item.name, 'Bohrmaschine');
+    assert.equal(quick.json.auto_named, false);
+    assert.match(quick.json.image_data_url, /^data:image\/jpeg;base64,/);
+    assert.match(quick.json.item.photo_path, /\.webp$/);
+    assert.equal(quick.json.inbox_count, 1);
+
+    // ohne Hinweis wird ein Fallback-Name vergeben
+    const unnamed = await t.call('POST', '/api/inbox', { image: `data:image/jpeg;base64,${jpeg}` });
+    assert.equal(unnamed.status, 201);
+    assert.equal(unnamed.json.auto_named, true);
+    assert.match(unnamed.json.item.name, /^Foto /);
+
+    const list = await t.call('GET', '/api/inbox');
+    assert.equal(list.json.count, 2);
+    assert.deepEqual(list.json.items.map((i) => i.bin_id), [null, null]);
+
+    // 2) ohne Maße kann nicht eingelagert werden
+    const noDims = await t.call('POST', '/api/inbox/assign', {});
+    assert.equal(noDims.status, 200);
+    assert.equal(noDims.json.assigned.length, 0);
+    assert.equal(noDims.json.failed.length, 2);
+    assert.match(noDims.json.failed[0].reason, /Maße|größer|Platz/i);
+
+    // 3) Maße ergänzen (wie nach der Analyse) und stapelweise einlagern
+    for (const item of list.json.items) {
+      await t.call('PUT', `/api/items/${item.id}`, {
+        dims_cm: { length_cm: 25, width_cm: 18, height_cm: 12 },
+        weight_g: 1200,
+        category: 'Werkzeug',
+        name: item.name,
+      });
+    }
+    const assigned = await t.call('POST', '/api/inbox/assign', {});
+    assert.equal(assigned.json.assigned.length, 2);
+    assert.equal(assigned.json.failed.length, 0);
+    assert.ok(assigned.json.assigned.every((a) => a.bin));
+
+    const after = await t.call('GET', '/api/inbox');
+    assert.equal(after.json.count, 0);
+    const stats = await t.call('GET', '/api/stats');
+    assert.equal(stats.json.stats.items_inbox, 0);
+
+    // 4) gezielte Einlagerung nur bestimmter IDs
+    const third = await t.call('POST', '/api/inbox', { image: `data:image/jpeg;base64,${jpeg}`, hint: 'Zange' });
+    await t.call('PUT', `/api/items/${third.json.item.id}`, { dims_cm: { length_cm: 20, width_cm: 8, height_cm: 5 } });
+    const one = await t.call('POST', '/api/inbox/assign', { ids: [third.json.item.id] });
+    assert.equal(one.json.assigned.length, 1);
+    assert.equal(one.json.assigned[0].name, 'Zange');
+  } finally { await t.close(); }
+});
+
+test('Posteingang: Artikel ohne Kiste kommen nicht in die Prüf-Erinnerung', async () => {
+  const t = await boot({ RECALL_MIN_ITEM_AGE_DAYS: '0' });
+  try {
+    await t.call('POST', '/api/items', { name: 'Lose Sache', dims_cm: { length_cm: 10, width_cm: 10, height_cm: 5 } });
+    const recall = await t.call('GET', '/api/recall');
+    assert.equal(recall.status, 200);
+    assert.equal(recall.json.items.length, 0);
   } finally { await t.close(); }
 });

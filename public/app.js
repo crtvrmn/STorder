@@ -77,7 +77,7 @@ async function api(path, { method = 'GET', body, signal } = {}) {
 
 /* ------------------------------- Ansichten ------------------------------ */
 
-const VIEWS = ['capture', 'bins', 'search', 'recall'];
+const VIEWS = ['capture', 'inbox', 'bins', 'search', 'recall'];
 
 function showView(name, { push = true } = {}) {
   if (!VIEWS.includes(name)) name = 'capture';
@@ -90,6 +90,7 @@ function showView(name, { push = true } = {}) {
     history.replaceState(null, '', `#${name}`);
   }
   if (name === 'bins') loadBins();
+  if (name === 'inbox') loadInbox();
   if (name === 'recall') loadRecall();
   if (name === 'search') {
     $('#search-input').focus();
@@ -234,7 +235,7 @@ function loadImage(file) {
 }
 
 /** Verkleinert das Foto im Browser, bevor es hochgeladen wird. */
-async function fileToDataUrl(file, maxSide = 1600) {
+async function fileToDataUrl(file, maxSide = 1000) {
   let source;
   let width;
   let height;
@@ -268,6 +269,9 @@ async function fileToDataUrl(file, maxSide = 1600) {
   ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
   source.close?.();
+  // WebP, wenn der Browser es kann (kleiner bei gleicher Qualität), sonst JPEG.
+  const webp = canvas.toDataURL('image/webp', 0.8);
+  if (webp.startsWith('data:image/webp')) return webp;
   return canvas.toDataURL('image/jpeg', 0.82);
 }
 
@@ -288,6 +292,7 @@ $('#photo-input').addEventListener('change', async (event) => {
     preview.hidden = false;
     $('#photo-placeholder').hidden = true;
     state.skipAnalysis = false;
+    $('#btn-inbox').disabled = false;
     // Formular sofort anzeigen: Die Analyse läuft danach im Hintergrund weiter,
     // sodass man schon Name, Maße etc. eintragen kann.
     renderResult();
@@ -967,6 +972,7 @@ function resetCapture() {
   $('#hint').value = '';
   const auto = $('#auto-analyze');
   if (auto) auto.checked = true;
+  $('#btn-inbox').disabled = true;
   $('#analyze-status').hidden = true;
   $('#result').hidden = true;
   $('#result').innerHTML = '';
@@ -1256,7 +1262,7 @@ function openBinDialog(bin, prefillLiters) {
       const file = event.target.files?.[0];
       if (!file) return;
       try {
-        const dataUrl = await fileToDataUrl(file, 1200);
+        const dataUrl = await fileToDataUrl(file, 1000);
         if (isEdit) {
           const { bin: updated } = await api(`/api/bins/${bin.id}/photo`, { method: 'POST', body: { image: dataUrl } });
           toast('Kistenfoto gespeichert', 'ok');
@@ -1294,7 +1300,7 @@ function itemCard(item, { compact = false } = {}) {
     : '<div class="item-thumb"></div>';
   const bin = item.bin
     ? `<span class="bin-chip">${esc(item.bin.code)}</span>`
-    : '<span class="bin-chip" style="background:color-mix(in srgb, var(--warn) 18%, transparent);color:var(--warn)">ohne Kiste</span>';
+    : '<span class="bin-chip" style="background:color-mix(in srgb, var(--warn) 18%, transparent);color:var(--warn)">Posteingang</span>';
   const dims = item.dims_cm?.length_cm
     ? `${item.dims_cm.length_cm} × ${item.dims_cm.width_cm} × ${item.dims_cm.height_cm} cm`
     : '';
@@ -1317,6 +1323,7 @@ function itemCard(item, { compact = false } = {}) {
             ${item.photos?.length > 1 ? ` · ${item.photos.length} Fotos` : ''}
           </div>
           <div class="actions">
+            ${item.bin_id ? '' : `<button class="small primary" data-inbox-assign="${item.id}">Einlagern</button>`}
             <button class="small ghost" data-edit-item="${item.id}">Bearbeiten</button>
             <button class="small ghost" data-move-item="${item.id}">Umräumen</button>
             <button class="small danger" data-delete-item="${item.id}">Entfernen</button>
@@ -1370,6 +1377,9 @@ function bindItemActions(root) {
   $$('[data-edit-item]', root).forEach((btn) => {
     btn.addEventListener('click', () => openItemEditor(Number(btn.dataset.editItem)));
   });
+  $$('[data-inbox-assign]', root).forEach((btn) => {
+    btn.addEventListener('click', () => assignInboxItem(Number(btn.dataset.inboxAssign)));
+  });
   $$('[data-move-item]', root).forEach((btn) => {
     btn.addEventListener('click', () => moveItemDialog(Number(btn.dataset.moveItem)));
   });
@@ -1397,6 +1407,135 @@ function readFileAsDataUrl(file) {
   });
 }
 
+/* ------------------------------ Posteingang ----------------------------- */
+
+async function updateInboxBadge(count) {
+  const el = $('#inbox-count');
+  if (!el) return;
+  let n = count;
+  if (n == null) {
+    try { n = (await api('/api/inbox')).items.length; } catch { return; }
+  }
+  el.textContent = String(n);
+  el.hidden = n === 0;
+}
+
+async function loadInbox() {
+  const list = $('#inbox-list');
+  const summary = $('#inbox-summary');
+  list.innerHTML = '<p class="status">Lädt…</p>';
+  try {
+    const { items } = await api('/api/inbox');
+    updateInboxBadge(items.length);
+    summary.textContent = items.length
+      ? `${items.length} Artikel warten auf eine Kiste – du kannst sie später in Ruhe durchsehen.`
+      : 'Der Posteingang ist leer.';
+    if (!items.length) {
+      list.innerHTML = '<p class="muted">Nimm im Tab „Einlagern" Fotos auf oder nutze „In den Posteingang (schnell)".</p>';
+      return;
+    }
+    renderItemCollection(items, list);
+  } catch (err) {
+    list.innerHTML = `<p class="status error">${esc(err.message)}</p>`;
+  }
+}
+
+async function addToInbox() {
+  if (!state.photo?.dataUrl) {
+    toast('Bitte zuerst ein Foto machen.', 'error');
+    return;
+  }
+  const btn = $('#btn-inbox');
+  const hint = $('#hint')?.value.trim() || '';
+  btn.disabled = true;
+  try {
+    const data = await api('/api/inbox', {
+      method: 'POST',
+      body: { image: state.photo.dataUrl, hint: hint || undefined },
+    });
+    resetCapture();
+    updateInboxBadge();
+    if (document.querySelector('#view-inbox').classList.contains('active')) loadInbox();
+    toast('Im Posteingang – nächstes Foto?', 'ok');
+    // Analyse im Hintergrund nachziehen (blockiert die Erfassung nicht).
+    if ($('#auto-analyze')?.checked ?? true) {
+      analyzeInboxItem(data.item.id, data.image_data_url, hint, data.auto_named);
+    }
+  } catch (err) {
+    toast(err.message, 'error');
+    btn.disabled = false;
+  }
+}
+
+async function analyzeInboxItem(id, imageDataUrl, hint, autoNamed) {
+  if (!imageDataUrl) return;
+  try {
+    const { analysis } = await api('/api/analyze', {
+      method: 'POST',
+      body: { image: imageDataUrl, hint: hint || undefined },
+    });
+    const patch = {
+      description: analysis.description,
+      brand: analysis.brand,
+      category: analysis.category,
+      shape: analysis.shape,
+      quantity: analysis.quantity,
+    };
+    if (autoNamed && analysis.title) patch.name = analysis.title;
+    await api(`/api/items/${id}`, { method: 'PUT', body: patch });
+    const dims = analysis.dims_cm;
+    if (dims && dims.length_cm && dims.width_cm && dims.height_cm) {
+      await api(`/api/items/${id}`, {
+        method: 'PUT',
+        body: { dims_cm: dims, weight_g: analysis.weight_g ?? null, shape: analysis.shape },
+      });
+    }
+    toast(`Posteingang: „${analysis.title || 'Artikel'}" analysiert`, 'ok');
+    updateInboxBadge();
+    if (document.querySelector('#view-inbox').classList.contains('active')) loadInbox();
+    if (document.querySelector('#view-search').classList.contains('active')) runSearch();
+  } catch {
+    // Analyse ist optional – der Artikel bleibt einfach im Posteingang.
+  }
+}
+
+async function assignInboxItems(ids = null) {
+  const res = await api('/api/inbox/assign', { method: 'POST', body: ids ? { ids } : {} });
+  return res;
+}
+
+async function assignInboxItem(id) {
+  try {
+    const res = await assignInboxItems([id]);
+    if (res.assigned.length) {
+      toast(`Eingelagert in ${res.assigned[0].bin ?? 'Kiste'}`, 'ok');
+    } else {
+      toast(res.failed[0]?.reason ?? 'Kein Platz gefunden', 'error');
+    }
+    refreshItemViews();
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+async function assignAllInbox() {
+  const btn = $('#btn-inbox-assign');
+  btn.disabled = true;
+  try {
+    const res = await assignInboxItems();
+    const failedText = res.failed.length
+      ? ` · ${res.failed.length} nicht (z. B. „${res.failed[0].name}": ${res.failed[0].reason})`
+      : '';
+    toast(`${res.assigned.length} eingelagert${failedText}`, res.failed.length ? 'error' : 'ok');
+    refreshItemViews();
+  } catch (err) {
+    toast(err.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+$('#btn-inbox').addEventListener('click', addToInbox);
+$('#btn-inbox-assign').addEventListener('click', assignAllInbox);
+
 /* ----------------------------- Detailansicht ---------------------------- */
 
 function openPhotoViewer(photoPath, item) {
@@ -1418,7 +1557,7 @@ function detailRows(item) {
     : null;
   const bin = item.bin
     ? `${item.bin.code}${item.bin.name ? ` · ${item.bin.name}` : ''}${item.bin.location ? ` (${item.bin.location})` : ''}`
-    : 'ohne Kiste';
+    : 'Posteingang';
   return [
     ['Ablageort', bin],
     ['Stückzahl', item.quantity > 1 ? `${item.quantity}×` : null],
@@ -1458,7 +1597,8 @@ function renderItemDetail(item) {
         ${invoice ? `<dt>Rechnung</dt><dd>${invoice}</dd>` : ''}
       </dl>
       <div class="row" style="margin-top:6px">
-        <button type="button" class="primary" id="detail-edit">✎ Bearbeiten</button>
+        ${item.bin_id ? '' : '<button type="button" class="primary" id="detail-store">Einlagern</button>'}
+        <button type="button" class="${item.bin_id ? 'primary' : 'small ghost'}" id="detail-edit">✎ Bearbeiten</button>
         <button type="button" class="small ghost" id="detail-move">Umräumen</button>
         <button type="button" class="small danger" id="detail-delete">Entfernen</button>
       </div>`,
@@ -1469,6 +1609,13 @@ function renderItemDetail(item) {
   $$('#dialog-body [data-view-photo]').forEach((btn) => {
     btn.addEventListener('click', () => openPhotoViewer(btn.dataset.viewPhoto, item));
   });
+  const storeBtn = $('#detail-store');
+  if (storeBtn) {
+    storeBtn.addEventListener('click', async () => {
+      closeDialog();
+      await assignInboxItem(item.id);
+    });
+  }
   $('#detail-edit').addEventListener('click', () => {
     closeDialog();
     renderItemEditor(item);
@@ -1505,6 +1652,8 @@ async function openItemEditor(itemId) {
 function refreshItemViews() {
   loadBins();
   runSearch();
+  updateInboxBadge();
+  if (document.querySelector('#view-inbox').classList.contains('active')) loadInbox();
 }
 
 function renderItemEditor(item) {
@@ -1905,6 +2054,7 @@ $('[data-action="reload-recall"]').addEventListener('click', loadRecall);
 /* --------------------------------- Start -------------------------------- */
 
 loadPaperlessStatus();
+updateInboxBadge();
 
 /* --------------------------- Listen-/Rasteransicht ---------------------- */
 

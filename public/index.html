@@ -54,6 +54,11 @@
 
         <p id="analyze-status" class="status" hidden></p>
 
+        <!-- Stapel-Erfassung: Foto direkt in den Posteingang -->
+        <button id="btn-inbox" class="primary" type="button" disabled>
+          ✉ In den Posteingang (schnell)
+        </button>
+
         <!-- unten: ohne KI selbst eingeben -->
         <button id="btn-manual" class="ghost capture-skip" type="button">
           Selbst eingeben – KI überspringen
@@ -89,6 +94,19 @@
       <div id="search-results" class="list"></div>
     </section>
 
+    <!-- Posteingang -->
+    <section id="view-inbox" class="view">
+      <div class="view-head">
+        <h2>Posteingang</h2>
+        <div class="row shrink">
+          <button class="small ghost view-toggle" data-view-mode type="button">Raster</button>
+          <button class="small primary" id="btn-inbox-assign" type="button">Alle einlagern</button>
+        </div>
+      </div>
+      <p class="muted" id="inbox-summary"></p>
+      <div id="inbox-list" class="list"></div>
+    </section>
+
     <!-- Erinnerung -->
     <section id="view-recall" class="view">
       <div class="view-head">
@@ -102,6 +120,7 @@
 
   <nav class="tabbar">
     <button class="tab active" data-view="capture"><span>＋</span>Einlagern</button>
+    <button class="tab" data-view="inbox"><span>✉</span>Posteingang<span id="inbox-count" class="tab-badge" hidden>0</span></button>
     <button class="tab" data-view="bins"><span>▤</span>Kisten</button>
     <button class="tab" data-view="search"><span>⌕</span>Suche</button>
     <button class="tab" data-view="recall"><span>↻</span>Prüfen</button>

@@ -846,6 +846,7 @@ export function stats(db) {
   const bins = listBins(db);
   const stored = countItems(db, 'stored');
   const discarded = countItems(db, 'discarded');
+  const inbox = db.prepare("SELECT COUNT(*) AS n FROM items WHERE status = 'stored' AND bin_id IS NULL").get().n;
   const totalCapacity = bins.reduce((s, b) => s + (b.capacity_liters ?? 0), 0);
   const totalUsed = bins.reduce((s, b) => s + (b.used_liters ?? 0), 0);
   const totalFree = bins.reduce((s, b) => s + (b.free_liters ?? 0), 0);
@@ -854,6 +855,7 @@ export function stats(db) {
     bins: bins.length,
     active_bins: bins.filter((b) => b.active).length,
     items_stored: stored,
+    items_inbox: inbox,
     items_discarded: discarded,
     capacity_liters: Math.round(totalCapacity * 10) / 10,
     used_liters: Math.round(totalUsed * 10) / 10,
