@@ -24,6 +24,7 @@ import { validateBoxInput, ValidationError } from '../lib/validate.js';
 import { suggestPlacement } from '../lib/suggest.js';
 import { findSimilarItems, findConsolidationSuggestions } from '../lib/similar.js';
 import { findPlausibilityIssues } from '../lib/plausibility.js';
+import { buildPublicPage } from '../lib/publicpage.js';
 import { getTaxonomy, normalizeCategories, sanitizeCategoryName, setTaxonomy } from '../lib/categories.js';
 import { analyzeImage } from './analyze.js';
 import { selectRecallItems, toRecallItem } from './recall.js';
@@ -650,6 +651,50 @@ export function createApp({ config, db, llm, paperless }) {
       .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'de'));
     res.json({ categories, taxonomy: getTaxonomy() });
   });
+
+  /* ------------------------- Öffentlicher Katalog ------------------------ */
+
+  // Eine einzelne HTML-Datei mit eingebetteten Bildern, Suche und Filtern.
+  // Enthält bewusst keine Preise, Rechnungen oder Kaufdaten.
+  let publicCache = { key: '', filename: '', html: '' };
+
+  app.get(
+    '/api/public/export',
+    route(async (req, res) => {
+      const includeBoxes = String(req.query.boxes ?? '') === '1';
+      const includeDims = String(req.query.dims ?? '') === '1';
+      const items = listItems(db, { status: 'stored', limit: 2000 });
+
+      const cacheKey = crypto.createHash('sha1')
+        .update(JSON.stringify({
+          boxes: includeBoxes,
+          dims: includeDims,
+          items: items.map((it) => [it.id, it.updated_at, it.name, it.photos]),
+        }))
+        .digest('hex');
+
+      if (publicCache.key !== cacheKey) {
+        const page = await buildPublicPage(items, {
+          dataDir: config.dataDir,
+          includeBoxes,
+          includeDims,
+          title: 'Storder – Lagerkatalog',
+        });
+        publicCache = {
+          key: cacheKey,
+          filename: `storder-katalog-${new Date().toISOString().slice(0, 10)}.html`,
+          html: page.html,
+        };
+      }
+
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.setHeader('Cache-Control', 'no-store');
+      if (String(req.query.download ?? '1') !== '0') {
+        res.setHeader('Content-Disposition', `attachment; filename="${publicCache.filename}"`);
+      }
+      res.send(publicCache.html);
+    }),
+  );
 
   /* ----------------------- Kategorien verwalten -------------------------- */
 

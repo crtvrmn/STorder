@@ -294,6 +294,23 @@ Ein Artikel kann mehrere Kategorien haben (z. B. `Elektronik` + `USB & Kabel` +
 automatisch auf diese Liste abgebildet (z. B. „Elektronikzubehör" →
 `Elektronik` + `USB & Kabel`), unbekannte auf `Sonstiges`.
 
+## Öffentlicher Katalog (HTML-Export)
+
+**Zahnrad → Einstellungen → 🌍 Öffentlicher Katalog** erzeugt eine **einzelne
+HTML-Datei** – ohne Server, ohne Internet, ohne externe Dateien:
+
+* alle eingelagerten Artikel mit **Name, Beschreibung, Kategorien und Marke**
+* **Bilder** als WebP-Data-URLs eingebettet (max. 3 pro Artikel, 720 px)
+* **Suche** über Name/Beschreibung/Kategorien/Marke (inkl. „kueche“ findet
+  „Küche“), **Kategorie-Chips** und eine Detailansicht mit Galerie
+* **keine Preise, Rechnungen oder Kaufdaten**; Kisten-Code und Maße lassen sich
+  im Dialog optional zuschalten
+* `noindex` gesetzt; Export bis 2000 Artikel
+
+Die Datei einfach in Nextcloud ablegen und per Link freigeben – sie läuft
+komplett im Browser (auch offline). Über **„Vorschau öffnen“** lässt sie sich
+vor dem Download ansehen.
+
 ## Wie gerechnet wird
 
 * **Artikelzeilen** zeigen Maße, Kategorie/Marke und Datum – Liter stehen nur
@@ -339,6 +356,7 @@ betreiben (oder hinter VPN/Reverse-Proxy mit Auth).
 | `GET /api/items?bin_id=…` | Inhalt einer Kiste |
 | `POST /api/items/:id/move` | umräumen (`bin_id` oder `"auto"`) |
 | `GET /api/categories` | vorgegebene Kategorien (`taxonomy`) + verwendete mit Anzahl |
+| `GET /api/public/export?boxes=1&dims=1&download=0` | öffentliche HTML-Datei (Bilder eingebettet) |
 | `GET /api/settings/categories` | Kategorien + Nutzungszähler (Verwaltung) |
 | `POST /api/settings/categories` | Kategorie hinzufügen (`{ name }`) |
 | `PUT /api/settings/categories` | Kategorie umbenennen (`{ from, to }`, aktualisiert Artikel) |
@@ -413,6 +431,8 @@ lib/suggest.js     verbindet Volumen + Packing zum Ablagevorschlag
 lib/llm.js         OpenAI-kompatibler Client (OpenRouter-Default)
 lib/paperless.js   Paperless-ngx-Client (Suche + Dokument-Download)
 lib/similar.js     Ähnlichkeitssuche ("gibt es das schon?")
+lib/publicpage.js  Export als eigenständige HTML-Seite (Bilder eingebettet)
+lib/public-template.html  Vorlage (HTML/CSS/JS) für den öffentlichen Katalog
 lib/validate.js    Eingabevalidierung
 public/            mobile Web-App (HTML/CSS/JS, kein Build)
 ```

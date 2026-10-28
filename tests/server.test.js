@@ -1306,3 +1306,49 @@ test('Kategorien verwalten: hinzufügen, umbenennen, löschen', async () => {
     assert.equal(usage['3D Druck'], 1);
   } finally { await t.close(); }
 });
+
+test('Öffentlicher Katalog: einzelne HTML-Datei mit Bildern und Suche', async () => {
+  const { default: sharp } = await import('sharp');
+  const jpeg = (await sharp({
+    create: { width: 800, height: 600, channels: 3, background: { r: 40, g: 120, b: 190 } },
+  }).jpeg().toBuffer()).toString('base64');
+
+  const t = await boot();
+  try {
+    const bin = (await t.call('POST', '/api/bins', { code: 'B1', dims_cm: { length_cm: 80, width_cm: 60, height_cm: 60 } })).json.bin;
+    const item = (await t.call('POST', '/api/items', {
+      name: 'Wasserkocher',
+      description: 'Kocher aus Edelstahl.',
+      categories: ['Küche', 'Haushalt'],
+      bin_id: bin.id,
+      dims_cm: { length_cm: 20, width_cm: 15, height_cm: 25 },
+      purchase_price: 49.9,
+      purchase_date: '2024-01-02',
+    })).json.item;
+    await t.call('POST', `/api/items/${item.id}/photos`, { images: [`data:image/jpeg;base64,${jpeg}`] });
+
+    const preview = await fetch(`${t.base}/api/public/export?download=0`);
+    assert.equal(preview.status, 200);
+    assert.match(preview.headers.get('content-type'), /^text\/html/);
+    const html = await preview.text();
+    assert.match(html, /Wasserkocher/);
+    assert.match(html, /Kocher aus Edelstahl/);
+    assert.match(html, /data:image\/webp;base64,/);
+    assert.match(html, /"Küche"/);
+    // Sensible Daten fehlen
+    assert.ok(!html.includes('49.9'));
+    assert.ok(!html.includes('2024-01-02'));
+    assert.ok(!html.includes('"B1"'));
+    assert.ok(!html.includes(`${item.dims_cm.length_cm} × ${item.dims_cm.width_cm} × ${item.dims_cm.height_cm} cm`));
+
+    // optional Kisten-Code + Maße
+    const full = await fetch(`${t.base}/api/public/export?download=0&boxes=1&dims=1`);
+    const fullHtml = await full.text();
+    assert.ok(fullHtml.includes('"B1"'));
+    assert.ok(fullHtml.includes(`${item.dims_cm.length_cm} × ${item.dims_cm.width_cm} × ${item.dims_cm.height_cm} cm`));
+
+    // Download-Variante
+    const dl = await fetch(`${t.base}/api/public/export`);
+    assert.match(dl.headers.get('content-disposition'), /attachment; filename="storder-katalog-\d{4}-\d{2}-\d{2}\.html"/);
+  } finally { await t.close(); }
+});

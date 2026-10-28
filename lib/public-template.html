@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>__TITLE__</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0b1118;
+    --bg-soft: #121b24;
+    --line: #223040;
+    --text: #e6edf5;
+    --muted: #93a4b7;
+    --accent: #49d6b4;
+    --radius: 14px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  header { padding: 28px 20px 10px; max-width: 1400px; margin: 0 auto; }
+  h1 { margin: 0 0 4px; font-size: clamp(1.4rem, 3vw, 2rem); letter-spacing: -0.01em; }
+  header p { margin: 0; color: var(--muted); font-size: 0.9rem; }
+  main { max-width: 1400px; margin: 0 auto; padding: 10px 20px 60px; }
+  .searchbar { position: relative; margin: 14px 0; }
+  .searchbar input {
+    width: 100%;
+    padding: 13px 44px 13px 16px;
+    font-size: 1rem;
+    color: var(--text);
+    background: var(--bg-soft);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    outline: none;
+  }
+  .searchbar input:focus { border-color: var(--accent); }
+  .searchbar button {
+    position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+    width: 30px; height: 30px; border: 0; border-radius: 50%;
+    background: transparent; color: var(--muted); font-size: 1.1rem; cursor: pointer;
+  }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+  .chip {
+    padding: 5px 10px; border-radius: 999px; border: 1px solid var(--line);
+    background: var(--bg-soft); color: var(--muted); font-size: 0.78rem; cursor: pointer;
+  }
+  .chip.active { border-color: var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+  .count { color: var(--muted); font-size: 0.85rem; margin: 0 0 12px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 14px; }
+  .card {
+    text-align: left; padding: 0; border: 1px solid var(--line); border-radius: var(--radius);
+    background: var(--bg-soft); color: inherit; cursor: pointer; overflow: hidden;
+    transition: border-color 0.15s ease, transform 0.15s ease;
+  }
+  .card:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); transform: translateY(-1px); }
+  .card img, .thumb-empty {
+    width: 100%; aspect-ratio: 1 / 1; object-fit: cover; display: block; background: var(--bg);
+  }
+  .thumb-empty { display: grid; place-items: center; font-size: 2rem; color: var(--line); }
+  .card-body { padding: 10px 12px 12px; }
+  .card-name { font-weight: 650; font-size: 0.95rem; line-height: 1.3; margin-bottom: 4px; }
+  .card-cats { color: var(--muted); font-size: 0.75rem; }
+  .empty { color: var(--muted); padding: 40px 0; text-align: center; }
+  dialog {
+    padding: 0; border: 1px solid var(--line); border-radius: 16px; background: var(--bg-soft); color: var(--text);
+    width: min(92vw, 720px); max-height: 90vh;
+  }
+  dialog::backdrop { background: rgba(0, 0, 0, 0.65); }
+  .modal-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+  .modal-head h2 { margin: 0; font-size: 1.05rem; }
+  .modal-close { border: 0; background: transparent; color: var(--muted); font-size: 1.3rem; cursor: pointer; padding: 4px 8px; }
+  .modal-body { padding: 14px 16px 20px; overflow-y: auto; max-height: calc(90vh - 60px); }
+  .gallery-main { width: 100%; max-height: 55vh; object-fit: contain; border-radius: 12px; background: var(--bg); display: block; }
+  .gallery-thumbs { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+  .gallery-thumbs button { padding: 0; border: 2px solid transparent; border-radius: 8px; background: none; cursor: pointer; }
+  .gallery-thumbs button.active { border-color: var(--accent); }
+  .gallery-thumbs img { width: 64px; height: 64px; object-fit: cover; border-radius: 6px; display: block; }
+  .desc { white-space: pre-wrap; margin: 14px 0 0; }
+  .meta { color: var(--muted); font-size: 0.85rem; margin-top: 10px; display: grid; gap: 2px; }
+  .cats { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; }
+  .cats span { border: 1px solid var(--line); border-radius: 999px; padding: 2px 9px; font-size: 0.75rem; color: var(--muted); }
+  footer { color: var(--muted); font-size: 0.78rem; text-align: center; padding: 20px; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<header>
+  <h1>__TITLE__</h1>
+  <p id="subtitle"></p>
+</header>
+<main>
+  <div class="searchbar">
+    <input id="q" type="search" placeholder="Suchen – Name, Beschreibung, Kategorie…" autocomplete="off" aria-label="Katalog durchsuchen">
+    <button id="clear" type="button" title="Suche leeren" aria-label="Suche leeren">×</button>
+  </div>
+  <div id="chips" class="chips"></div>
+  <p id="count" class="count"></p>
+  <div id="grid" class="grid"></div>
+  <p id="empty" class="empty hidden">Nichts gefunden.</p>
+</main>
+<footer id="footer"></footer>
+<dialog id="modal" aria-label="Gegenstand">
+  <div class="modal-head">
+    <h2 id="modal-title"></h2>
+    <button class="modal-close" type="button" aria-label="Schließen">×</button>
+  </div>
+  <div class="modal-body">
+    <img id="modal-img" class="gallery-main hidden" alt="">
+    <div id="modal-thumbs" class="gallery-thumbs"></div>
+    <p id="modal-desc" class="desc"></p>
+    <div id="modal-cats" class="cats"></div>
+    <div id="modal-meta" class="meta"></div>
+  </div>
+</dialog>
+<script id="data" type="application/json">__DATA__</script>
+<script>
+(function () {
+  'use strict';
+  var DATA = JSON.parse(document.getElementById('data').textContent);
+  var items = Array.isArray(DATA.items) ? DATA.items : [];
+  var activeCats = new Set();
+  var query = '';
+
+  var norm = function (value) {
+    return String(value == null ? '' : value)
+      .toLowerCase()
+      .replace(/ä/g, 'ae')
+      .replace(/ö/g, 'oe')
+      .replace(/ü/g, 'ue')
+      .replace(/ß/g, 'ss')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+  };
+
+  var grid = document.getElementById('grid');
+  var empty = document.getElementById('empty');
+  var countEl = document.getElementById('count');
+  var chipsEl = document.getElementById('chips');
+  var q = document.getElementById('q');
+  var modal = document.getElementById('modal');
+
+  document.getElementById('subtitle').textContent =
+    items.length + ' Gegenstände · ' + (DATA.generated_at ? new Date(DATA.generated_at).toLocaleDateString('de-DE') : '');
+  document.getElementById('footer').textContent =
+    'Erstellt mit Storder · ' + items.length + ' Gegenstände · Bilder und Beschreibungen';
+
+  // Kategorie-Chips aus den tatsächlich vorkommenden Kategorien
+  var counts = {};
+  items.forEach(function (it) {
+    (it.categories || []).forEach(function (c) { counts[c] = (counts[c] || 0) + 1; });
+  });
+  var cats = Object.keys(counts).sort(function (a, b) { return counts[b] - counts[a] || a.localeCompare(b, 'de'); });
+  if (cats.length) {
+    var all = document.createElement('button');
+    all.type = 'button'; all.className = 'chip active'; all.textContent = 'Alle';
+    all.addEventListener('click', function () { activeCats.clear(); render(); });
+    chipsEl.appendChild(all);
+    cats.forEach(function (c) {
+      var b = document.createElement('button');
+      b.type = 'button'; b.className = 'chip'; b.textContent = c + ' ' + counts[c];
+      b.dataset.cat = c;
+      b.addEventListener('click', function () {
+        if (activeCats.has(c)) activeCats.delete(c); else activeCats.add(c);
+        render();
+      });
+      chipsEl.appendChild(b);
+    });
+  }
+
+  function itemText(it) {
+    return norm([it.name, it.description, (it.categories || []).join(' '), it.brand].join(' '));
+  }
+
+  function matches(it) {
+    if (query && itemText(it).indexOf(query) === -1) return false;
+    if (activeCats.size) {
+      var cats = it.categories || [];
+      var ok = false;
+      activeCats.forEach(function (c) { if (cats.indexOf(c) !== -1) ok = true; });
+      if (!ok) return false;
+    }
+    return true;
+  }
+
+  function makeCard(it) {
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'card';
+    var photo = (it.photos && it.photos[0]) || '';
+    if (photo) {
+      var img = document.createElement('img');
+      img.src = photo; img.alt = it.name || ''; img.loading = 'lazy';
+      btn.appendChild(img);
+    } else {
+      var ph = document.createElement('span');
+      ph.className = 'thumb-empty'; ph.textContent = '📦';
+      btn.appendChild(ph);
+    }
+    var body = document.createElement('div');
+    body.className = 'card-body';
+    var name = document.createElement('div');
+    name.className = 'card-name'; name.textContent = it.name || 'Ohne Namen';
+    body.appendChild(name);
+    var metaParts = [];
+    if (it.box) metaParts.push('📦 ' + it.box);
+    if (it.categories && it.categories.length) metaParts.push(it.categories.join(' · '));
+    if (metaParts.length) {
+      var meta = document.createElement('div');
+      meta.className = 'card-cats'; meta.textContent = metaParts.join(' — ');
+      body.appendChild(meta);
+    }
+    btn.appendChild(body);
+    btn.addEventListener('click', function () { openModal(it); });
+    return btn;
+  }
+
+  function renderChips() {
+    Array.prototype.forEach.call(chipsEl.children, function (chip) {
+      if (!chip.dataset.cat) { chip.classList.toggle('active', activeCats.size === 0); return; }
+      chip.classList.toggle('active', activeCats.has(chip.dataset.cat));
+    });
+  }
+
+  function render() {
+    renderChips();
+    var visible = items.filter(matches);
+    grid.textContent = '';
+    visible.forEach(function (it) { grid.appendChild(makeCard(it)); });
+    countEl.textContent = visible.length + ' von ' + items.length + ' Gegenständen';
+    empty.classList.toggle('hidden', visible.length !== 0);
+  }
+
+  function openModal(it) {
+    document.getElementById('modal-title').textContent = it.name || 'Ohne Namen';
+    var img = document.getElementById('modal-img');
+    var thumbs = document.getElementById('modal-thumbs');
+    thumbs.textContent = '';
+    var photos = it.photos || [];
+    if (photos.length) {
+      img.src = photos[0]; img.classList.remove('hidden');
+      if (photos.length > 1) {
+        photos.forEach(function (src, index) {
+          var b = document.createElement('button');
+          b.type = 'button'; if (index === 0) b.className = 'active';
+          var t = document.createElement('img'); t.src = src; t.alt = ''; b.appendChild(t);
+          b.addEventListener('click', function () {
+            img.src = src;
+            Array.prototype.forEach.call(thumbs.children, function (x) { x.classList.remove('active'); });
+            b.classList.add('active');
+          });
+          thumbs.appendChild(b);
+        });
+      }
+    } else {
+      img.removeAttribute('src'); img.classList.add('hidden');
+    }
+    var desc = document.getElementById('modal-desc');
+    desc.textContent = it.description || '';
+    desc.classList.toggle('hidden', !it.description);
+    var cats = document.getElementById('modal-cats');
+    cats.textContent = '';
+    (it.categories || []).forEach(function (c) {
+      var s = document.createElement('span'); s.textContent = c; cats.appendChild(s);
+    });
+    var meta = document.getElementById('modal-meta');
+    meta.textContent = '';
+    [it.brand ? 'Marke: ' + it.brand : '', it.dims ? 'Maße: ' + it.dims : '', it.box ? 'Ablageort: ' + it.box : '']
+      .filter(Boolean).forEach(function (line) {
+        var d = document.createElement('div'); d.textContent = line; meta.appendChild(d);
+      });
+    if (typeof modal.showModal === 'function') modal.showModal(); else modal.setAttribute('open', '');
+  }
+
+  document.querySelector('.modal-close').addEventListener('click', function () { modal.close(); });
+  modal.addEventListener('click', function (event) { if (event.target === modal) modal.close(); });
+  document.addEventListener('keydown', function (event) { if (event.key === 'Escape' && modal.open) modal.close(); });
+
+  q.addEventListener('input', function () { query = norm(q.value.trim()); render(); });
+  document.getElementById('clear').addEventListener('click', function () { q.value = ''; query = ''; render(); q.focus(); });
+
+  render();
+})();
+</script>
+</body>
+</html>

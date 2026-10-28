@@ -214,6 +214,55 @@ async function openAppSettings() {
 
 /* ------------------------- Einstellungen-Menü -------------------------- */
 
+function publicExportUrl({ boxes = false, dims = false, download = true } = {}) {
+  const params = new URLSearchParams();
+  if (boxes) params.set('boxes', '1');
+  if (dims) params.set('dims', '1');
+  if (!download) params.set('download', '0');
+  const qs = params.toString();
+  return `/api/public/export${qs ? `?${qs}` : ''}`;
+}
+
+function openPublicCatalog() {
+  const readOpts = () => ({
+    boxes: Boolean($('#pub-boxes')?.checked),
+    dims: Boolean($('#pub-dims')?.checked),
+  });
+
+  openDialog({
+    title: 'Öffentlicher Katalog',
+    okText: 'Herunterladen',
+    body: `
+      <p class="muted">Eine einzelne HTML-Datei mit Bildern, Beschreibungen und Suche –
+      ohne Preise, Rechnungen oder Kaufdaten. Zum Ablegen in Nextcloud und Teilen per Link.</p>
+      <label class="toggle-row">
+        <input type="checkbox" id="pub-boxes">
+        <span class="toggle-text"><strong>Kisten-Code anzeigen</strong><small>z. B. „B1"</small></span>
+      </label>
+      <label class="toggle-row">
+        <input type="checkbox" id="pub-dims">
+        <span class="toggle-text"><strong>Maße anzeigen</strong><small>L × B × H</small></span>
+      </label>
+      <p class="muted">Bilder werden eingebettet (WebP, max. 3 pro Artikel, 720 px).
+      Die Datei funktioniert ohne Server und ohne Internet.</p>
+      <button type="button" class="small ghost" id="pub-preview">Vorschau öffnen</button>`,
+    onOk: async () => {
+      const a = document.createElement('a');
+      a.href = publicExportUrl(readOpts());
+      a.download = '';
+      a.rel = 'noopener';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      toast('Katalog wird erstellt – Download startet gleich.', 'ok');
+    },
+  });
+
+  $('#pub-preview').addEventListener('click', () => {
+    window.open(publicExportUrl({ ...readOpts(), download: false }), '_blank', 'noopener');
+  });
+}
+
 async function openSettingsMenu() {
   // Posteingang-Zähler frisch holen (Badge steckt im Menü).
   try {
@@ -243,6 +292,11 @@ async function openSettingsMenu() {
         label: '🏷 Kategorien bearbeiten',
         hint: 'Hinzufügen, umbenennen, löschen',
         onSelect: () => openCategoryManager(),
+      },
+      {
+        label: '🌍 Öffentlicher Katalog',
+        hint: 'Durchsuchbare HTML-Datei für Nextcloud',
+        onSelect: () => openPublicCatalog(),
       },
       {
         label: '⚙️ App-Einstellungen',
